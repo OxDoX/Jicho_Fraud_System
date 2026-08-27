@@ -305,6 +305,20 @@ alert. The point isn't to replace an investigator's judgment — it's to make
 sure the first five minutes of every investigation start from "here's what's
 connected" instead of a blank search box.
 
+**Manual hunting, not just alert-attached leads.** Hunt suggestions above
+still start from an alert. `dashboard.html` also has a standalone "Fraud
+Hunting" panel — an investigator can search the raw transaction data
+directly (any combination of account, counterparty, agent, card, merchant,
+channel, type, amount range) or trace an account's counterparty network
+from a hunch, with no alert having fired first. The network trace renders
+as an explainable concentric-ring diagram, not a black-box graph layout —
+seed at the center, each further hop on a wider ring, one edge per node
+back to whichever transaction first linked it in. It's a client-side port
+of `search()` / `account_network()` / `shared_attribute_accounts()` running
+against the same embedded demo transactions the alert panel uses, so it
+behaves identically to running the same queries against `jicho.hunting` in
+Python.
+
 ## Turning this into income — realistic next steps
 
 1. **Portfolio/demo asset first.** This synthetic-data version is safe to show

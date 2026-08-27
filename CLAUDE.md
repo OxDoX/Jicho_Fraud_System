@@ -240,9 +240,12 @@ bridge (detection produces hunting leads automatically), but a human hunter
 using `hunting.py`'s `search()`/`account_network()` directly on a hunch,
 with no alert having fired yet, is the other half of the capability and
 should stay available as a first-class workflow in any UI built on top of
-this (a dedicated "Hunt" panel with manual search + network visualization
-is a natural next UI addition — not yet built in `dashboard.html`, which
-currently only shows hunt suggestions attached to alerts).
+this. `dashboard.html` now has this as a dedicated "Fraud Hunting" panel:
+manual search (any combination of the fields `hunting.search()` supports)
+plus an account-network trace rendered as a concentric-ring diagram —
+a client-side port of `search()`/`account_network()`/
+`shared_attribute_accounts()` against the same embedded demo transactions,
+so it behaves identically to the Python functions it mirrors.
 
 ## 9. Engineering standards (non-negotiable)
 
