@@ -897,28 +897,42 @@ async function askJicho() {
 }
 
 // ---------------- Emerging-threat → rule drafting agent ----------------
-let nextRuleId = 8; // R1-R7 already exist in rules_engine.py
+let nextRuleId = 19; // R1-R18 already exist in jicho/rules/known_patterns.py — never renumber them
 
-const RULE_DRAFT_SYSTEM_PROMPT = `You are a fraud detection engineer at an East/Central African bank,
-extending an existing Python rules engine. You will be given: (1) the transaction data schema the
-engine works with, (2) the next available rule ID, and (3) a plain-language description of a new/emerging
-fraud scenario from an analyst. Your job is to draft a NEW detection rule matching the existing engine's
-style and conventions.
+const RULE_DRAFT_SYSTEM_PROMPT = `You are a fraud detection engineer at an East/Central/Southern African
+financial institution, extending an existing Python rules engine (Jicho). You will be given: (1) the
+transaction data schema the engine works with, (2) the next available rule ID, and (3) a plain-language
+description of a new/emerging fraud scenario from an analyst. Your job is to draft a NEW detection rule
+matching the existing engine's style and conventions.
 
-Transaction schema (a pandas DataFrame, one row per transaction/event):
-transaction_id, account_id, transaction_type (deposit/withdrawal/transfer_in/transfer_out/cash_in/cash_out/sim_swap),
-amount, timestamp, channel (mobile_money/bank_transfer/agent/card), counterparty_id, agent_id,
-initiated_by_staff (bool), event_type.
+Transaction schema (a pandas DataFrame, one row per transaction/event; see jicho/models.py):
+Required columns: transaction_id, account_id, transaction_type, amount, timestamp, channel.
+transaction_type is one of: deposit, withdrawal, transfer_in, transfer_out, cash_in, cash_out, sim_swap,
+loan_disbursement, pos_purchase, refund.
+Optional columns present on some rows: counterparty_id, agent_id, initiated_by_staff (bool), event_type,
+entry_mode (chip/swipe/contactless/manual/card_not_present), merchant_id, card_id, terminal_id,
+terminal_country, auth_mode. A column not listed here does not exist in the data the engine sees — if the
+scenario needs something else (call-center transcripts, KYC documents, biometrics, device fingerprints),
+say so in "caveats" rather than inventing a column.
 
-Existing rule methods follow this exact pattern:
-  def rule_name(self, df: pd.DataFrame):
-      cfg = self.cfg
-      ... filter/group df with pandas ...
-      self.alerts.append(Alert(
-          rule_id="R{n}", rule_name="...", account_id=..., transaction_id=...,
-          timestamp=..., severity="LOW/MEDIUM/HIGH/CRITICAL", score=0-100,
-          description="...", evidence={...}
-      ))
+Existing rules use a plugin-registry pattern (jicho/rules/base.py) — each rule is an independent class,
+NOT a method on a shared class, and there is no run_all() to wire it into:
+
+  @register_rule
+  class DescriptiveRuleName(Rule):
+      rule_id = "R{n}"
+      rule_name = "Short Name"
+
+      def evaluate(self, df: pd.DataFrame, config: EngineConfig) -> list[Alert]:
+          alerts = []
+          ... filter/group df with pandas, using config.some_threshold for any tunable value ...
+          alerts.append(Alert(
+              rule_id=self.rule_id, rule_name=self.rule_name,
+              account_id=..., transaction_id=...,
+              timestamp=str(...), severity="LOW/MEDIUM/HIGH/CRITICAL", score=0-100,
+              description="...", evidence={...}
+          ))
+          return alerts
 
 Respond with ONLY a raw JSON object (no markdown fences, no preamble, no commentary outside the JSON) with these exact keys:
 {
@@ -926,7 +940,7 @@ Respond with ONLY a raw JSON object (no markdown fences, no preamble, no comment
   "rule_name": "short name",
   "typology_summary": "1-2 sentences on the fraud pattern described",
   "detection_logic": "plain-language explanation of the exact conditions that should trigger this rule",
-  "python_code": "a complete Python method (def rule_xxx(self, df): ...) implementing the logic, following the existing pattern exactly, using self.cfg for any tunable thresholds",
+  "python_code": "a complete @register_rule Rule subclass exactly as shown above, with a real evaluate(self, df, config) method implementing the logic",
   "config_additions": {"new_config_key": suggested_default_value},
   "severity": "LOW|MEDIUM|HIGH|CRITICAL",
   "score": 0-100,
@@ -975,7 +989,7 @@ async function draftRule() {
         <span class="lbl">Suggested Config Additions</span>
         <pre class="code-block">${escapeHtml(JSON.stringify(rule.config_additions, null, 2))}</pre>
       </div>
-      <div class="review-note">⚠ Human review required: paste this into rules_engine.py, add a call to it in run_all(), and validate thresholds against real (or realistic) transaction volumes before relying on it — this is a draft, not a deployed rule.<br><br><b>Caveats from the agent:</b> ${rule.caveats}</div>
+      <div class="review-note">⚠ Human review required: paste this class into jicho/rules/known_patterns.py — the @register_rule decorator means the engine auto-discovers it, no other wiring needed. Add the config keys above to jicho/config.py's EngineConfig and config/default_config.yaml, add a positive + negative test to tests/test_rules.py per the project's engineering standards, and validate thresholds against real (or realistic) transaction volumes before relying on it — this is a draft, not a deployed rule.<br><br><b>Caveats from the agent:</b> ${rule.caveats}</div>
     `;
     out.classList.add('show');
     nextRuleId++;
