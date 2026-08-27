@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Engagement state is sensitive (targets, findings, redacted evidence) and
+# per-operator — never commit it.
+engagements/
+
+.env
+.env.*
+!.env.example

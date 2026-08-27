@@ -1,0 +1,38 @@
+# Example scope doc for a bug bounty engagement. Copy and edit per program.
+# Refusal-by-default: an engagement will not load without at least one
+# in_scope entry, and any target that doesn't match in_scope is refused.
+
+program_name: "Example Corp Bug Bounty"
+engagement_type: bug_bounty   # bug_bounty | pentest
+
+in_scope:
+  - pattern: "*.example.com"
+    asset_type: host
+  - pattern: "api.example.com"
+    asset_type: host
+  - pattern: "203.0.113.0/24"
+    asset_type: cidr
+
+out_of_scope:
+  - "internal.example.com"
+  - "status.example.com"
+
+exclusions:
+  - "self-XSS without a demonstrated vector"
+  - "missing security headers alone"
+  - "clickjacking on non-sensitive pages"
+  - "rate-limiting or brute-force reports on non-auth endpoints"
+  - "SPF/DMARC misconfiguration alone"
+  - "version disclosure alone"
+  - "best-practice recommendations without demonstrated impact"
+
+safe_harbor_confirmed: false   # set true only after verifying the program's
+                                 # published safe harbor clause covers this testing
+
+identity_requirement: "Use User-Agent: ExampleResearcher-<handle> on all requests"
+rate_limit: "max 5 req/s per host"
+
+blackout_windows:
+  - "2026-12-24T00:00:00Z to 2026-12-26T23:59:59Z"
+
+notes: "Program disclosure policy: 90 days from triage or vendor fix, whichever is sooner."
