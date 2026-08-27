@@ -209,7 +209,7 @@ different account_id record.
 ---
 
 ## R13 — Cross-Border Card Velocity
-**Region:** Central Africa (CEMAC/EAC border seams) | **Severity:** CRITICAL (91) | **RT:** No (card_id spans accounts in practice)
+**Region:** Central Africa (CEMAC/EAC border seams) | **Severity:** CRITICAL (91) | **RT:** Yes (with caveat)
 
 **Typology:** Same card used at POS terminals in two countries within a
 window too short for real travel — a cloned-card signature, especially
@@ -219,6 +219,11 @@ relevant across borders with uneven card-network fraud coordination.
 `impossible_travel_window_hours` (3h).
 
 **Config:** `impossible_travel_window_hours`
+
+**RT caveat:** correct for the common case where a card belongs to one
+account; would miss the rare case where the same card_id appears under a
+different account_id record — same caveat as R12, since both group by
+`card_id` rather than `account_id`.
 
 ---
 

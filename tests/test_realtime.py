@@ -65,6 +65,17 @@ def test_account_local_rule_classification_excludes_cross_entity_rules():
     assert "R14" not in ACCOUNT_LOCAL_RULE_IDS  # merchant_id-keyed
 
 
+def test_account_local_rule_classification_includes_caveated_card_keyed_rules():
+    """R12 and R13 group by card_id, not account_id, but are deliberately
+    included as real-time-eligible with a documented caveat (correct for the
+    common case where a card belongs to one account). Pins this so it can't
+    silently drift the other way either — docs/RULE_CATALOG.md previously
+    disagreed with this exact classification for R13 until corrected.
+    """
+    assert "R12" in ACCOUNT_LOCAL_RULE_IDS
+    assert "R13" in ACCOUNT_LOCAL_RULE_IDS
+
+
 def test_realtime_scorer_isolates_accounts(base_time):
     scorer = RealtimeScorer(CFG)
     scorer.score_transaction(_txn("A1", "withdrawal", 10_000, base_time))
