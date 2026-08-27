@@ -213,7 +213,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 126 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 128 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
@@ -454,6 +454,24 @@ regression test (`test_calibration_never_suggests_structuring_threshold_from_dep
 so it can't quietly come back. Calibration still requires human review
 before any suggested threshold goes to production — it removes the
 guesswork, not the sign-off step.
+
+A second, related finding from auditing this module later: `apply_suggestions()`
+used `config.model_copy(update=...)`, which Pydantic v2 applies WITHOUT
+re-validating — confirmed directly (`EngineConfig().model_copy(update={"sim_swap_amount_threshold": -500})`
+happily returns a config with a negative threshold, something the same
+field's constructor rejects outright). Reproduced with realistic data, not
+just a contrived example: a dataset where enough POS transactions are
+logged at amount=0 (balance checks, authorization-only events) pulls the
+25th-percentile suggestion for `card_testing_amount_threshold` down to
+exactly 0, which violates that field's `Field(gt=0)` — and the resulting
+config was silently accepted and fed straight into `calibrate()`'s own
+backtest. Fixed at both ends: the percentile functions now skip a
+suggestion that wouldn't satisfy its own field's constraint, and
+`apply_suggestions()` now reconstructs via `EngineConfig(...)` (which does
+validate) as a defense-in-depth backstop, raising `ConfigValidationError`
+if a suggestion ever gets through anyway — the same "fail loudly, not
+silently downstream" guarantee `load_config()` already gives a bad YAML
+file, now actually held everywhere a config gets built.
 
 **Real-time scoring (`jicho/realtime.py`, `jicho/realtime_api.py`)** — a
 working incremental scorer and HTTP API now exist, tested end-to-end

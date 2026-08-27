@@ -1,7 +1,10 @@
 from datetime import timedelta
 
+import pytest
+
 from jicho.calibration import apply_suggestions, calibrate, calibrate_amount_thresholds, calibrate_velocity_thresholds
 from jicho.config import EngineConfig
+from jicho.exceptions import ConfigValidationError
 from tests.conftest import make_df
 
 CFG = EngineConfig()
@@ -65,6 +68,48 @@ def test_calibrate_produces_backtest_alert_counts(base_time):
     assert report.alert_count_current >= 0
     assert report.alert_count_suggested >= 0
     assert isinstance(report.to_dict(), dict)
+
+
+def test_calibrate_amount_thresholds_never_suggests_a_non_positive_threshold(base_time):
+    """Regression test for a real bug found during development: a dataset
+    where enough transactions are logged at amount=0 (e.g. balance-check or
+    authorization-only events — not hypothetical, several of this codebase's
+    own test fixtures use amount=0 sim_swap marker rows) can pull even a
+    high percentile down to 0. sim_swap_amount_threshold and
+    card_testing_amount_threshold both have Field(gt=0) — suggesting 0 for
+    either would produce a config that fails its own schema. Confirmed via
+    apply_suggestions() before this fix: it silently accepted the invalid
+    value via model_copy(), which does not re-validate.
+    """
+    rows = [
+        {"account_id": f"A{i}", "transaction_type": "withdrawal", "amount": 0,
+         "timestamp": base_time + timedelta(minutes=i), "channel": "mobile_money"}
+        for i in range(25)
+    ]
+    suggestions = calibrate_amount_thresholds(make_df(rows), CFG)
+    assert not any(s.field_name == "sim_swap_amount_threshold" for s in suggestions)
+
+    pos_rows = [
+        {"account_id": f"A{i}", "transaction_type": "pos_purchase", "amount": 0 if i < 10 else 5000,
+         "timestamp": base_time + timedelta(minutes=i), "channel": "card"}
+        for i in range(25)
+    ]
+    pos_suggestions = calibrate_amount_thresholds(make_df(pos_rows), CFG)
+    assert not any(s.field_name == "card_testing_amount_threshold" for s in pos_suggestions)
+
+
+def test_apply_suggestions_rejects_a_suggestion_that_violates_its_own_field_constraint():
+    """Defense-in-depth regression test: even if some future suggestion
+    function generates an invalid value despite the guard above,
+    apply_suggestions() must not silently hand back a config that fails its
+    own schema (which config.model_copy(update=...) would do, since it
+    skips validation entirely) — it must fail loudly, the same guarantee
+    load_config() already provides for a bad YAML file.
+    """
+    from jicho.calibration import ThresholdSuggestion
+    bad_suggestion = ThresholdSuggestion("sim_swap_amount_threshold", CFG.sim_swap_amount_threshold, 0.0, "test")
+    with pytest.raises(ConfigValidationError, match="invalid config"):
+        apply_suggestions(CFG, [bad_suggestion])
 
 
 def test_calibration_never_suggests_structuring_threshold_from_deposit_percentiles(base_time):

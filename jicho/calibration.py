@@ -17,6 +17,7 @@ import pandas as pd
 
 from jicho.config import EngineConfig
 from jicho.engine import FraudEngine
+from jicho.exceptions import ConfigValidationError
 from jicho.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -71,11 +72,24 @@ def calibrate_amount_thresholds(df: pd.DataFrame, config: EngineConfig) -> list[
     withdrawals = df.loc[df["transaction_type"] == "withdrawal", "amount"]
     if len(withdrawals) >= 20:
         p99 = _percentile(withdrawals, 0.99)
-        suggestions.append(ThresholdSuggestion(
-            "sim_swap_amount_threshold", config.sim_swap_amount_threshold, p99,
-            f"99th percentile of {len(withdrawals)} observed withdrawal amounts — a SIM-swap cash-out "
-            "threshold should sit above typical withdrawal size, not an arbitrary round number."
-        ))
+        # sim_swap_amount_threshold has Field(gt=0) — a dataset dominated by
+        # zero-amount withdrawal rows (e.g. balance checks, or a sim_swap
+        # marker event itself logged as a zero-amount withdrawal, as several
+        # of this codebase's own test fixtures do) can genuinely pull even a
+        # 99th-percentile threshold down to 0. Skip rather than suggest a
+        # value the config schema would itself reject — see apply_suggestions()
+        # for why this can't be caught silently downstream instead.
+        if p99 > 0:
+            suggestions.append(ThresholdSuggestion(
+                "sim_swap_amount_threshold", config.sim_swap_amount_threshold, p99,
+                f"99th percentile of {len(withdrawals)} observed withdrawal amounts — a SIM-swap cash-out "
+                "threshold should sit above typical withdrawal size, not an arbitrary round number."
+            ))
+        else:
+            logger.warning(
+                "Skipping sim_swap_amount_threshold calibration: 99th percentile of observed withdrawals "
+                "is 0, which would violate the field's gt=0 constraint."
+            )
 
     deposits = df.loc[df["transaction_type"].isin(["deposit", "cash_in"]), "amount"]
     if len(deposits) >= 20:
@@ -97,11 +111,21 @@ def calibrate_amount_thresholds(df: pd.DataFrame, config: EngineConfig) -> list[
     pos_txns = df.loc[df["transaction_type"] == "pos_purchase", "amount"]
     if len(pos_txns) >= 20:
         p25 = _percentile(pos_txns, 0.25)
-        suggestions.append(ThresholdSuggestion(
-            "card_testing_amount_threshold", config.card_testing_amount_threshold, p25,
-            f"25th percentile of {len(pos_txns)} observed POS amounts — card-testing transactions are "
-            "characteristically small relative to this institution's typical purchase size, not a fixed value."
-        ))
+        # Same reasoning as sim_swap_amount_threshold above: card_testing_amount_threshold
+        # also has Field(gt=0), and a lower percentile (25th) is even more likely to land
+        # on 0 if the institution logs any zero-amount POS events (e.g. authorization-only
+        # or balance-check transactions) — skip rather than suggest an invalid value.
+        if p25 > 0:
+            suggestions.append(ThresholdSuggestion(
+                "card_testing_amount_threshold", config.card_testing_amount_threshold, p25,
+                f"25th percentile of {len(pos_txns)} observed POS amounts — card-testing transactions are "
+                "characteristically small relative to this institution's typical purchase size, not a fixed value."
+            ))
+        else:
+            logger.warning(
+                "Skipping card_testing_amount_threshold calibration: 25th percentile of observed POS "
+                "amounts is 0, which would violate the field's gt=0 constraint."
+            )
 
     return suggestions
 
@@ -140,9 +164,23 @@ def calibrate_velocity_thresholds(df: pd.DataFrame, config: EngineConfig) -> lis
 def apply_suggestions(config: EngineConfig, suggestions: list[ThresholdSuggestion]) -> EngineConfig:
     """Returns a NEW config with suggestions applied — does not mutate the
     original, and does not touch anything the caller didn't explicitly pass.
+
+    Deliberately reconstructs via EngineConfig(...) rather than
+    config.model_copy(update=...): Pydantic v2's model_copy applies `update`
+    WITHOUT re-validating it, so a suggestion violating its own field's
+    constraints (e.g. a Field(gt=0) threshold) would silently produce a
+    config instance that fails its own schema — exactly the "bad config
+    fails loudly, not silently downstream" guarantee config.py's docstring
+    promises, broken by the one function whose entire job is to hand back a
+    config a reviewer trusts. The individual calibrate_*_thresholds()
+    functions above already avoid generating such a suggestion in the first
+    place; this is the defense-in-depth backstop, not the primary fix.
     """
     updates = {s.field_name: s.suggested_value for s in suggestions}
-    return config.model_copy(update=updates)
+    try:
+        return EngineConfig(**{**config.model_dump(), **updates})
+    except Exception as e:  # pydantic ValidationError and friends — same wrapping load_config() uses
+        raise ConfigValidationError(f"A calibration suggestion produced an invalid config: {e}") from e
 
 
 def calibrate(df: pd.DataFrame, config: EngineConfig) -> CalibrationReport:
