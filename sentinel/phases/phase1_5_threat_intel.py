@@ -8,6 +8,7 @@ is a nice-to-have, sourcing is the requirement.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import requests
@@ -17,6 +18,38 @@ from ..llm.client import LLMUnavailable, SentinelLLM
 from ..llm.prompts import threat_intel_prompt
 
 NVD_API = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+
+# "the technique landscape shifts within weeks" (system prompt, Phase 1.5) —
+# treat a brief older than this as no longer trustworthy for currency claims.
+STALE_AFTER_DAYS = 14
+
+
+def brief_path(engagement: Engagement) -> Path:
+    return engagement.root / "threat_intel_brief.md"
+
+
+def brief_age_days(engagement: Engagement) -> float | None:
+    path = brief_path(engagement)
+    if not path.exists():
+        return None
+    return (time.time() - path.stat().st_mtime) / 86400
+
+
+def staleness_warning(engagement: Engagement) -> str | None:
+    """None if the brief is fresh enough to trust; otherwise a
+    human-readable reason it isn't. Non-blocking by design — Hard
+    Constraint 5 says ground proposals in current sources, not that the
+    tool must refuse to proceed without them; the LLM prompts already say
+    to label unverifiable-currency claims as such."""
+    age = brief_age_days(engagement)
+    if age is None:
+        return "no Phase 1.5 threat-intel brief on file — run `sentinel threat-intel` before trusting technique currency"
+    if age > STALE_AFTER_DAYS:
+        return (
+            f"threat-intel brief is {age:.1f} days old (stale after {STALE_AFTER_DAYS}) "
+            f"— re-run `sentinel threat-intel` before trusting technique currency"
+        )
+    return None
 
 
 def fetch_recent_cves(keyword: str, results: int = 10, timeout: int = 20) -> list[dict]:
@@ -96,7 +129,7 @@ def run(
     else:
         brief = f"=== Sourced-and-dated NVD data (raw) ===\n{cve_findings_text}"
 
-    out_path = engagement.root / "threat_intel_brief.md"
+    out_path = brief_path(engagement)
     out_path.write_text(brief, encoding="utf-8")
     engagement.logger.log_action("threat_intel_brief_saved", {"path": str(out_path)})
     engagement.set_phase("1.5_threat_intel_done")

@@ -20,6 +20,7 @@ from .phases import (
     phase1_25_dedup,
     phase1_5_threat_intel,
     phase1_75_hypotheses,
+    phase1_fingerprint,
     phase1_scope,
     phase2_sast,
     phase3_dast,
@@ -29,6 +30,7 @@ from .phases import (
     phase6_disclosure,
     phase7_retest,
 )
+from .tools.freshness import check_nuclei_templates
 from .tools.registry import list_tools
 
 app = typer.Typer(help="Sentinel — approval-gated bug bounty / pentest agent.")
@@ -95,6 +97,36 @@ def status(engagement_id: str = typer.Option(..., "--id")):
     for d in eng.disclosures:
         typer.echo(f"  - {d.id}  all_clear={d.answers.all_clear()}  published={d.published}")
 
+    staleness = phase1_5_threat_intel.staleness_warning(eng)
+    if staleness:
+        typer.echo(f"\n⚠ {staleness}")
+
+
+@app.command("refresh-check")
+def refresh_check(engagement_id: str = typer.Option(..., "--id")):
+    """How current is the agent's picture of the threat landscape right
+    now? Reports threat-intel brief age (Hard Constraint 5 / Phase 1.5:
+    'the technique landscape shifts within weeks') and, if found, how
+    stale the local nuclei-templates checkout looks. Purely informational
+    — never updates anything on its own; it tells you what to re-run."""
+    eng = _load(engagement_id)
+    _print_phase_banner(eng)
+
+    staleness = phase1_5_threat_intel.staleness_warning(eng)
+    age = phase1_5_threat_intel.brief_age_days(eng)
+    if staleness:
+        typer.echo(f"⚠ threat-intel: {staleness}")
+    else:
+        typer.echo(f"✓ threat-intel: brief is {age:.1f} days old, within the {phase1_5_threat_intel.STALE_AFTER_DAYS}-day freshness window")
+
+    templates = check_nuclei_templates()
+    if templates.get("path") is None:
+        typer.echo(f"? nuclei-templates: {templates['note']}")
+    elif templates["stale"]:
+        typer.echo(f"⚠ nuclei-templates: {templates['path']} is {templates['age_days']} days old — run `nuclei -update-templates`")
+    else:
+        typer.echo(f"✓ nuclei-templates: {templates['path']} is {templates['age_days']} days old")
+
 
 @app.command()
 def stop(
@@ -125,6 +157,79 @@ def resume(
 
 
 # --------------------------------------------------------------------------
+# Phase 1 — tech-stack fingerprinting
+# --------------------------------------------------------------------------
+
+
+@app.command("fingerprint-code")
+def fingerprint_code(
+    engagement_id: str = typer.Option(..., "--id"),
+    path: Path = typer.Option(..., "--path", help="Local repo/checkout to scan for manifest files."),
+):
+    """Detect languages/frameworks/dependencies from local manifest files
+    (package.json, requirements.txt, go.mod, Gemfile, composer.json,
+    pom.xml, Dockerfile, ...). Local files only — no approval gate needed,
+    same as any other Phase 2 SAST activity. Feeds threat-intel/hypotheses/
+    suggest automatically unless you override with --stack/--architecture."""
+    eng = _load(engagement_id)
+    _print_phase_banner(eng)
+    if not path.exists():
+        typer.echo(f"Path does not exist: {path}", err=True)
+        raise typer.Exit(1)
+    detected = phase1_fingerprint.detect_local_stack(path)
+    merged = phase1_fingerprint.save_local_stack(eng, detected)
+    typer.echo(phase1_fingerprint.summarize_stack(merged))
+
+
+@app.command("fingerprint-target")
+def fingerprint_target(
+    engagement_id: str = typer.Option(..., "--id"),
+    target: str = typer.Option(..., "--target"),
+    tool: str = typer.Option("whatweb", "--tool", help="whatweb | httpx | wappalyzer"),
+):
+    """Propose a tech-fingerprint scan against a live target. Still touches
+    a target, so this goes through the exact same approval gate as any
+    other Phase 3 proposal (passive recon is not an 'obviously safe'
+    exception — Hard Constraint 1). On a successful run, tech hints parsed
+    from the output are merged into detected_stack.json."""
+    eng = _load(engagement_id)
+    phase1_scope.require_confirmed(eng)
+    _print_phase_banner(eng)
+    tool_args = {"whatweb": "", "httpx": "-tech-detect -silent", "wappalyzer": ""}.get(tool, "")
+    try:
+        result = phase3_dast.propose_and_run(
+            eng,
+            tool=tool,
+            args=f"{tool_args} {target}".strip(),
+            target=target,
+            expected_outcome="identify running technologies/frameworks/CMS",
+            rationale="Phase 1 tech-stack fingerprinting",
+            source=ProposalSource.BASELINE,
+        )
+    except (
+        approval.EmergencyStopped,
+        approval.ScopeBlocked,
+        approval.DestructiveActionBlocked,
+        approval.EngagementTypeBlocked,
+        approval.EscalationNotRequested,
+    ) as e:
+        typer.echo(f"BLOCKED: {e}", err=True)
+        raise typer.Exit(1)
+
+    if result is None or result.exit_code != 0:
+        return
+
+    hints = phase1_fingerprint.extract_tech_hints(result.raw_output_redacted)
+    existing = phase1_fingerprint.load_detected_stack(eng)
+    existing.setdefault("live_target", {})[target] = hints
+    (eng.root / phase1_fingerprint.STACK_PATH_NAME).write_text(
+        json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    eng.logger.log_action("stack_fingerprinted_live", {"target": target, "hints": hints})
+    typer.echo(f"Detected tech hints for {target}: {hints or '(none parsed)'}")
+
+
+# --------------------------------------------------------------------------
 # Phase 1.25 — dedup / exclusion check
 # --------------------------------------------------------------------------
 
@@ -149,16 +254,42 @@ def dedup_check(
 @app.command("threat-intel")
 def threat_intel(
     engagement_id: str = typer.Option(..., "--id"),
-    stack: str = typer.Option(..., "--stack", help="Short description of the target's tech stack."),
-    keywords: str = typer.Option(..., "--keywords", help="Comma-separated NVD keyword queries, e.g. 'nginx,graphql,django'."),
+    stack: str = typer.Option(
+        None, "--stack",
+        help="Short description of the target's tech stack. Auto-filled from "
+             "fingerprint-code/fingerprint-target output if omitted.",
+    ),
+    keywords: str = typer.Option(
+        None, "--keywords",
+        help="Comma-separated NVD keyword queries, e.g. 'nginx,graphql,django'. "
+             "Auto-derived from the detected stack if omitted.",
+    ),
     model: str = typer.Option("claude-sonnet-4-5", "--model"),
     no_llm: bool = typer.Option(False, "--no-llm", help="Skip LLM synthesis; save raw sourced NVD data only."),
 ):
     eng = _load(engagement_id)
     phase1_scope.require_confirmed(eng)
     _print_phase_banner(eng)
+
+    detected = phase1_fingerprint.load_detected_stack(eng)
+    if stack is None:
+        stack = phase1_fingerprint.summarize_stack(detected)
+        typer.echo(f"No --stack given, using auto-detected stack:\n{stack}\n")
+
+    if keywords is None:
+        kw_list = phase1_fingerprint.derive_keywords(detected)
+        if not kw_list:
+            typer.echo(
+                "No --keywords given and nothing to derive from a detected stack. "
+                "Run `sentinel fingerprint-code` / `fingerprint-target` first, or pass --keywords.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        typer.echo(f"No --keywords given, using auto-derived: {', '.join(kw_list)}\n")
+    else:
+        kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+
     llm = None if no_llm else _require_llm(model)
-    kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
     brief = phase1_5_threat_intel.run(eng, stack, kw_list, llm=llm)
     typer.echo(brief)
 
@@ -171,12 +302,29 @@ def threat_intel(
 @app.command()
 def hypotheses(
     engagement_id: str = typer.Option(..., "--id"),
-    architecture: str = typer.Option(..., "--architecture", help="Short description of the target's architecture."),
+    architecture: str = typer.Option(
+        None, "--architecture",
+        help="Short description of the target's architecture. Auto-filled from "
+             "the detected stack + scope summary if omitted.",
+    ),
     model: str = typer.Option("claude-sonnet-4-5", "--model"),
 ):
     eng = _load(engagement_id)
     phase1_scope.require_confirmed(eng)
     _print_phase_banner(eng)
+
+    staleness = phase1_5_threat_intel.staleness_warning(eng)
+    if staleness:
+        typer.echo(f"⚠ {staleness}\n")
+
+    if architecture is None:
+        detected = phase1_fingerprint.load_detected_stack(eng)
+        architecture = (
+            f"{phase1_scope.summarize(eng)}\n\n"
+            f"Detected tech stack:\n{phase1_fingerprint.summarize_stack(detected)}"
+        )
+        typer.echo(f"No --architecture given, using auto-detected stack + scope summary.\n")
+
     llm = _require_llm(model)
     try:
         hyps = phase1_75_hypotheses.run(eng, architecture, llm)
@@ -295,6 +443,9 @@ def suggest(
     eng = _load(engagement_id)
     phase1_scope.require_confirmed(eng)
     _print_phase_banner(eng)
+    staleness = phase1_5_threat_intel.staleness_warning(eng)
+    if staleness:
+        typer.echo(f"⚠ {staleness}\n")
     llm = _require_llm(model)
     try:
         suggestions = phase3_dast.suggest_proposals(eng, llm)

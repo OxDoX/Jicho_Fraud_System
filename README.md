@@ -24,6 +24,28 @@ that exact proposal.
 
 ## Why this architecture
 
+- **The agent recognizes the tech stack itself**
+  (`sentinel fingerprint-code` / `sentinel fingerprint-target`,
+  `sentinel/phases/phase1_fingerprint.py`) — local codebase fingerprinting
+  parses manifest files (package.json, requirements.txt/pyproject.toml,
+  go.mod, Gemfile, composer.json, pom.xml/build.gradle, Dockerfile) with no
+  approval gate (it never touches a target); live-target fingerprinting
+  (whatweb/httpx/wappalyzer) goes through the normal Phase 3 approval gate,
+  since passive recon still touches a target (Hard Constraint 1). Either
+  way, the result feeds `threat-intel`, `hypotheses`, and `suggest`
+  automatically — `--stack`/`--architecture` are optional now, not required
+  hand-typed input.
+- **The agent tracks whether its own knowledge is stale**
+  (`sentinel refresh-check`, `sentinel/phases/phase1_5_threat_intel.py::
+  staleness_warning`) — "the technique landscape shifts within weeks"
+  (Hard Constraint 5 / Phase 1.5) is enforced as a real age check: a
+  missing or >14-day-old threat-intel brief prints a non-blocking warning
+  on `status`, `hypotheses`, and `suggest`, telling you to re-run
+  `threat-intel` before trusting technique currency. It also reports
+  whether a local `nuclei-templates` checkout looks stale. This is
+  entirely local/informational — the agent never rewrites its own code or
+  tool registry on its own; "keeping current" means re-querying its
+  sources, not self-modifying.
 - **The agent proposes, it doesn't just execute what you type**
   (`sentinel suggest` / `sentinel/phases/phase3_dast.py::suggest_proposals`)
   — the LLM drafts concrete tool+args+target Phase 3 proposals from the
@@ -132,14 +154,26 @@ sentinel status --id my-program
 #   sentinel stop --id my-program --reason "..."
 #   sentinel resume --id my-program --reason "..."   # explicit, logged, required to continue
 
-# 4. Phase 1.5 — threat intel (real NVD data + optional LLM synthesis)
-sentinel threat-intel --id my-program \
-  --stack "nginx, Django 5.x, PostgreSQL, GraphQL API" \
-  --keywords "django,graphql,nginx"
+# 3.5. Phase 1 — fingerprint the tech stack instead of typing it by hand.
+#      Local codebase: no approval gate (never touches a target).
+sentinel fingerprint-code --id my-program --path ./path/to/repo
+#      Live target: goes through the normal approval gate, same as any Phase 3 action.
+sentinel fingerprint-target --id my-program --target https://app.example.com --tool whatweb
 
-# 5. Phase 1.75 — novel attack-chain hypotheses (LLM required)
-sentinel hypotheses --id my-program \
-  --architecture "Public GraphQL API behind nginx, Django backend, S3-backed file uploads"
+# 4. Phase 1.5 — threat intel (real NVD data + optional LLM synthesis).
+#    --stack/--keywords are optional now — they auto-fill from whatever
+#    fingerprint-code/fingerprint-target detected above.
+sentinel threat-intel --id my-program
+#    ...or override manually:
+#    sentinel threat-intel --id my-program --stack "nginx, Django 5.x, GraphQL API" --keywords "django,graphql,nginx"
+
+# Is the agent's picture of the threat landscape still current? (Hard
+# Constraint 5 — "the technique landscape shifts within weeks")
+sentinel refresh-check --id my-program
+
+# 5. Phase 1.75 — novel attack-chain hypotheses (LLM required).
+#    --architecture is optional too — auto-fills from scope + detected stack.
+sentinel hypotheses --id my-program
 
 # 6. Phase 2 — SAST (no approval gate; local code only)
 #    Findings use raw redacted tool output by default. Add --llm-triage only
@@ -223,9 +257,10 @@ Tests cover the safety-critical paths specifically: scope matching
 destructive block, escalation block, pentest-only block, denial handling,
 logging), emergency stop/resume state transitions, the dedup/exclusion
 prompt, redaction (JWTs, AWS keys, emails, label-preserving value masking),
-finding correlation/merge, LLM proposal-suggestion parsing, and — critically
-— that findings/hypotheses/disclosures actually survive a save/reload cycle
-as typed objects (every `sentinel` command is a fresh process, so this one
+finding correlation/merge, LLM proposal-suggestion parsing, manifest-based
+tech-stack detection, threat-intel staleness calculation, and — critically —
+that findings/hypotheses/disclosures actually survive a save/reload cycle as
+typed objects (every `sentinel` command is a fresh process, so this one
 matters more than it sounds).
 
 ## Project layout
@@ -241,15 +276,16 @@ sentinel/
   tools/
     registry.py        approved open-source tool list
     runner.py           safe subprocess execution (or manual-draft) of an approved tool
+    freshness.py         local nuclei-templates staleness check (informational only)
   llm/
     client.py           thin Anthropic API wrapper, no tool-use wired to it
     prompts.py           Sentinel system prompt + phase task prompts
   phases/
-    phase1_scope.py, phase1_25_dedup.py, phase1_5_threat_intel.py,
-    phase1_75_hypotheses.py, phase2_sast.py, phase3_dast.py,
-    phase4_verification.py, phase4_5_cleanup.py, phase5_reporting.py,
-    phase6_disclosure.py, phase7_retest.py
+    phase1_scope.py, phase1_fingerprint.py, phase1_25_dedup.py,
+    phase1_5_threat_intel.py, phase1_75_hypotheses.py, phase2_sast.py,
+    phase3_dast.py, phase4_verification.py, phase4_5_cleanup.py,
+    phase5_reporting.py, phase6_disclosure.py, phase7_retest.py
   cli.py              Typer CLI wiring every phase together
-tests/                 pytest coverage for scope/approval/redact
+tests/                 pytest coverage for scope/approval/redact/fingerprint/staleness
 examples/scope.example.yaml
 ```

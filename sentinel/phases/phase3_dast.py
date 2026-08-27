@@ -120,6 +120,7 @@ def suggest_proposals(engagement: Engagement, llm: SentinelLLM) -> list[dict]:
     `propose-suggested`), which runs it through the exact same approval
     gate as anything else."""
     from ..tools.registry import list_tools
+    from .phase1_fingerprint import load_detected_stack, summarize_stack
     from .phase1_scope import summarize as summarize_scope
 
     threat_intel_path = engagement.root / "threat_intel_brief.md"
@@ -130,9 +131,10 @@ def suggest_proposals(engagement: Engagement, llm: SentinelLLM) -> list[dict]:
 
     approved_names = ", ".join(sorted(t.name for t in list_tools()))
     checklist_text = "\n".join(f"- {item}" for item in BASELINE_CHECKLIST)
+    scope_and_stack = f"{summarize_scope(engagement)}\n\nDetected tech stack:\n{summarize_stack(load_detected_stack(engagement))}"
 
     raw = llm.ask(
-        dast_proposal_prompt(summarize_scope(engagement), threat_intel, hyps_text, checklist_text, approved_names),
+        dast_proposal_prompt(scope_and_stack, threat_intel, hyps_text, checklist_text, approved_names),
         max_tokens=3000,
     )
     suggestions = _parse_json_array(raw)
