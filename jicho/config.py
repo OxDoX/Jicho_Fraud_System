@@ -105,6 +105,23 @@ class EngineConfig(BaseModel):
     # channels may require "closed".
     prevention_fail_mode: str = Field(default="open", pattern="^(open|closed)$")
 
+    # --- Unsupervised anomaly detection (jicho/anomaly.py) ---
+    # The one honest gap flagged in the project brief's "adapts to emerging
+    # threats" story (Section 7): a layer that flags statistically unusual
+    # account behavior even when no named rule matches it. On by default —
+    # unlike prevention, a wrong flag here costs an investigator a few
+    # minutes of review, not a blocked transaction, so the asymmetry that
+    # justifies prevention's off-by-default stance doesn't apply here.
+    anomaly_detection_enabled: bool = Field(default=True)
+    # Iglewicz & Hoaglin (1993) recommended cutoff for their modified
+    # z-score outlier test — a standard, citable statistical reference,
+    # not a value tuned against any institution's data.
+    anomaly_zscore_threshold: float = Field(gt=0, default=3.5)
+    # Below this many distinct accounts in a batch, there isn't a
+    # meaningful portfolio baseline to compare any one account against —
+    # detect_anomalies() skips rather than flagging on a near-empty sample.
+    anomaly_min_accounts_for_baseline: int = Field(gt=1, default=10)
+
     @field_validator("offhours_end")
     @classmethod
     def _end_after_start(cls, v, info):

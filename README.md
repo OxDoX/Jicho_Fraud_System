@@ -62,10 +62,11 @@ jicho/                          → installable package
   realtime_api.py                → HTTP transport + webhook dispatch for real-time scoring
   federated_layering.py          → privacy-preserving cross-institution matching primitive
   prevention.py                  → real-time block/hold/allow decisions, off by default, opt-in per rule
+  anomaly.py                     → unsupervised anomaly layer: flags statistical outliers no named rule covers
   rules/
     base.py                     → Rule ABC + plugin registry
     known_patterns.py           → all 18 detection rules
-tests/                          → 23 unit tests (pytest)
+tests/                          → unit tests (pytest)
 config/default_config.yaml      → reviewable, tunable thresholds
 run.py                          → CLI entry point
 sample_data_generator.py        → synthetic demo data w/ planted patterns
@@ -127,6 +128,48 @@ calls through your own backend that holds the API key server-side — never
 ship an API key in client-side HTML. This is a one-function change
 (`callClaude()` in `dashboard.html`) once you have that backend.
 
+## Unsupervised anomaly detection — the third leg of "adapts to new threats"
+
+The AI rule-drafting workflow above and calibration's threshold retuning
+(below) cover two of the three ways this system adapts to fraud it wasn't
+originally written to catch. The third was, until now, the one honest gap:
+a genuinely *unknown* pattern — one nobody has described to the rule-drafting
+agent yet — sails straight through 18 named rules that were never written to
+catch it.
+
+`jicho/anomaly.py` closes that gap without pretending to be more than it is.
+It is **not** a black-box ML model: for every account it computes four named
+behavioral features (transaction count, inflow, outflow, distinct
+counterparties — the same features `find_similar_accounts()` uses) and flags
+any account whose *modified z-score* on one of them clears a threshold
+against the rest of the portfolio that batch. The 3.5 cutoff is Iglewicz &
+Hoaglin's (1993) standard recommendation for this exact statistic, not a
+number tuned against anyone's data. A flagged alert names the specific
+feature and z-score driving it, e.g. *"total_outflow is a statistical
+outlier against the portfolio median — modified z-score 6.2"* — verifiable
+by a reviewer, unlike a model's opaque confidence score.
+
+It is deliberately **not** folded into `FraudEngine.run()` or the 18-rule
+registry — call `FraudEngine.detect_anomalies()` explicitly (the CLI does
+this automatically and prints its findings in a clearly separate section).
+An account already covered by a named rule this run is excluded from its
+own output, so a flagged account here is genuinely *not* one of the 18
+already explained. Below `anomaly_min_accounts_for_baseline` (10) accounts
+in a batch, it stays silent rather than flagging off a near-empty sample —
+that's a structural limitation, not a bug: this method needs a real
+portfolio to compare an account against.
+
+**Honest caveat about the bundled demo data:** `sample_data_generator.py`
+plants one clear, extreme example per rule against a thin "normal" filler
+population — that's useful for proving each of the 18 rules fires on its
+own planted pattern, but it is not a realistic, smoothly-varying portfolio.
+Running anomaly detection against it will flag noticeably more accounts
+than it would against real production traffic, because almost every
+account touched by a planted scenario looks extreme next to the thin
+filler baseline. That's a property of the demo data, not the detector —
+worth saying plainly to anyone evaluating this against the bundled sample
+rather than real transaction history.
+
 ## Engineering standards this codebase follows
 
 This section exists because "explainable rules" only means something if the
@@ -148,16 +191,18 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 79 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 87 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
   the detection-to-hunting bridge, threshold calibration (including a
   regression test pinning a real bug found during development), the
   real-time incremental scorer (including a regression test on rule
-  classification), and the privacy-preserving cross-institution matching
+  classification), the privacy-preserving cross-institution matching
   primitive (including a proof that raw account IDs never appear in an
-  exported fingerprint). Run with `pytest tests/ -v`.
+  exported fingerprint), and the unsupervised anomaly layer (including a
+  regression test proving it never re-flags an account a named rule already
+  explained). Run with `pytest tests/ -v`.
 
 **New dependencies for the additions above**
 - `flask` and `requests` — the real-time HTTP API and its webhook dispatch.
@@ -189,8 +234,8 @@ code itself would survive a real due-diligence review. Concretely:
   codebase property, and should be named accurately in any pitch.
 
 **What's still missing for production (say this upfront to prospects)**
-- No CI pipeline configured yet (tests/lint run locally; wiring to GitHub
-  Actions or similar is straightforward once this lives in a real repo).
+- CI (`.github/workflows/ci.yml`) runs tests and lint on every push/PR, but
+  there's no deploy pipeline, staging environment, or release process yet.
 - No encryption-at-rest or access-control layer — this engine assumes it's
   running inside an institution's already-secured environment; it is not
   itself a secured data store.

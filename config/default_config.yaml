@@ -57,3 +57,10 @@ ato_window_minutes: 30
 ato_amount_threshold: 500000
 
 atm_multi_terminal_window_minutes: 20
+
+# Unsupervised anomaly detection (jicho/anomaly.py) — off the 18 named
+# rules entirely, flags accounts that are statistical outliers against
+# the rest of the portfolio. See that module's docstring for method.
+anomaly_detection_enabled: true
+anomaly_zscore_threshold: 3.5
+anomaly_min_accounts_for_baseline: 10

@@ -108,6 +108,11 @@ and re-deriving from scratch risks reintroducing them:
   keyed by agent_id, merchant_id, a cross-account chain, or a
   portfolio-wide window are NOT real-time-eligible and must stay on the
   batch path.
+- `jicho/anomaly.py` — unsupervised anomaly detection: flags accounts that
+  are statistical outliers on named behavioral features against the rest
+  of the portfolio, even when no rule matches. See Section 7 for how this
+  fits the "adapts to emerging threats" story and why it's deliberately
+  not a `Rule` subclass.
 - `jicho/federated_layering.py` — privacy-preserving cross-institution
   matching primitive (salted SHA-256 hashing). This does NOT solve
   cross-institution layering detection — that requires a legal data-sharing
@@ -123,12 +128,14 @@ and re-deriving from scratch risks reintroducing them:
   unauthenticated ONLY inside Claude.ai's artifact sandbox — a standalone
   deployment must proxy these through the institution's own backend holding
   the API key server-side.
-- `tests/` — 69 tests, pytest, covering positive/negative cases per rule,
+- `tests/` — 87 tests, pytest, covering positive/negative cases per rule,
   config/schema validation, engine fault isolation, hunting, the
   hunt-suggestion bridge, calibration (including the regression test
   above), real-time scoring (including a rule-classification regression
-  test), and federated layering (including a proof that raw account IDs
-  never appear in an exported fingerprint).
+  test), federated layering (including a proof that raw account IDs
+  never appear in an exported fingerprint), and the unsupervised anomaly
+  layer (including a regression test that it never re-flags an account
+  a named rule already explained).
 
 Run `pytest tests/ -v` and `ruff check jicho/ tests/` before and after any
 change. Both must stay clean. This is not optional scaffolding — it's how
@@ -209,12 +216,20 @@ buildable adaptation mechanism is three-layered:
    (Section 5.3) — minutes to days.
 2. Confirmed/false-positive investigator feedback → automatic threshold
    retuning on EXISTING rules via `calibration.py` — ongoing.
-3. An unsupervised anomaly-detection layer (NOT YET BUILT — real next
-   step) that flags statistically unusual account behavior even without a
-   named rule, feeding the same investigator queue, so genuinely unknown
-   patterns get a route to discovery instead of sailing through
-   undetected. Build this next if asked to extend "hunting" or "emerging
-   threats" further — it is the one honest gap remaining in that story.
+3. An unsupervised anomaly-detection layer (`jicho/anomaly.py`, built) that
+   flags statistically unusual account behavior even without a named rule.
+   Deliberately not a `Rule` subclass and not folded into `FraudEngine.run()`
+   — call `FraudEngine.detect_anomalies()` explicitly (see its and the
+   module's docstrings for why, and for the honest caveat that the bundled
+   demo dataset over-triggers it by construction). Uses median/MAD-based
+   modified z-scores over the same named features `find_similar_accounts()`
+   uses, with the Iglewicz & Hoaglin (1993) 3.5 cutoff — explainable, not a
+   black-box model. Excludes accounts already covered by a rule alert this
+   run, so a flagged account is genuinely not one of the named 18. This
+   closed the one honest gap flagged here; if extending further, the next
+   real step is validating the z-score/feature choices against real
+   (anonymized) institution data once a pilot provides it — not adding more
+   engineered features speculatively.
 
 ## 8. Fraud hunting vs. detection — keep this distinction sharp
 

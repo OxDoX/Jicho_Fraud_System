@@ -1,6 +1,6 @@
 [project]
 name = "jicho"
-version = "0.4.0"
+version = "0.5.0"
 description = "Explainable fraud detection for East/Central/Southern African financial institutions"
 requires-python = ">=3.10"
 dependencies = [

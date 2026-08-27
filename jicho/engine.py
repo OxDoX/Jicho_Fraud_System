@@ -9,6 +9,7 @@ rule is a bug ticket, not an outage).
 
 import pandas as pd
 
+from jicho.anomaly import detect_anomalies
 from jicho.config import EngineConfig, load_config
 from jicho.exceptions import RuleExecutionError
 from jicho.logging_config import get_logger, mask_account_id
@@ -51,3 +52,22 @@ class FraudEngine:
             )
 
         return sorted(all_alerts, key=lambda a: -a.score)
+
+    def detect_anomalies(self, df: pd.DataFrame, rule_alerts: list[Alert] | None = None) -> list[Alert]:
+        """Runs the unsupervised anomaly layer (jicho/anomaly.py) — a separate,
+        explicit step from run(), not folded into it. See jicho/anomaly.py's
+        module docstring for why: this flags statistical outliers with no
+        named typology behind them, which is a different claim than "an R1-18
+        rule fired," and merging the two silently would make run()'s alert
+        list misleading about what was actually detected and how.
+
+        Accounts that already have a rule-based alert this run are excluded
+        from the output (see jicho/anomaly.py's exclude_accounts parameter).
+        Pass `rule_alerts` from an already-computed run(df) call to avoid
+        re-running every rule; if omitted, run() is called internally.
+        """
+        df = validate_transactions(df)
+        if rule_alerts is None:
+            rule_alerts = self.run(df)
+        already_flagged = frozenset(a.account_id for a in rule_alerts)
+        return detect_anomalies(df, self.config, exclude_accounts=already_flagged)

@@ -104,3 +104,41 @@ def test_engine_isolates_a_failing_rule(monkeypatch, base_time):
     ])
     alerts = engine.run(df)  # must not raise, despite R2 being broken
     assert any(a.rule_id == "R1" for a in alerts)
+
+
+def test_run_never_includes_anomaly_alerts(base_time):
+    """run() must stay scoped to the registered R1-R18 rules only — the
+    unsupervised anomaly layer (jicho/anomaly.py) is a deliberately separate
+    call (engine.detect_anomalies()), not folded silently into run()'s
+    output. See jicho/anomaly.py's module docstring for why.
+    """
+    df = make_df([
+        {"account_id": "A1", "transaction_type": "withdrawal", "amount": 0,
+         "timestamp": base_time, "channel": "mobile_money", "event_type": "sim_swap"},
+        {"account_id": "A1", "transaction_type": "withdrawal", "amount": 600_000,
+         "timestamp": base_time + __import__("datetime").timedelta(hours=1), "channel": "mobile_money"},
+    ])
+    engine = FraudEngine()
+    alerts = engine.run(df)
+    assert not any(a.rule_id == "ANOMALY" for a in alerts)
+
+
+def test_detect_anomalies_is_a_separate_explicit_call(base_time):
+    """FraudEngine exposes anomaly detection as its own method, using the
+    engine's own config, distinct from run()."""
+    from datetime import timedelta as td
+
+    rows = []
+    for i in range(12):
+        rows.append({
+            "account_id": f"ACC{i:03d}", "transaction_type": "deposit",
+            "amount": 45_000 + i * 1_000, "timestamp": base_time, "channel": "mobile_money",
+        })
+    rows.append({
+        "account_id": "ACC999", "transaction_type": "deposit",
+        "amount": 90_000_000, "timestamp": base_time + td(hours=1), "channel": "mobile_money",
+    })
+    df = make_df(rows)
+    engine = FraudEngine()
+    anomalies = engine.detect_anomalies(df)
+    assert any(a.account_id == "ACC999" and a.rule_id == "ANOMALY" for a in anomalies)
