@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jicho — Fraud Alert Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0E17;
+    --panel: #10151F;
+    --panel-2: #151C29;
+    --border: #212A3A;
+    --text: #E7ECF4;
+    --muted: #7C8AA5;
+    --accent: #2DD4A7;
+    --critical: #E5484D;
+    --high: #F5A623;
+    --medium: #E9C46A;
+    --low: #5B8DEF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  header {
+    position: relative;
+    padding: 22px 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  header::before {
+    content: "";
+    position: absolute;
+    top: 0; left: -40%;
+    width: 40%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(45,212,167,0.08), transparent);
+    animation: sweep 4.5s linear infinite;
+  }
+  @keyframes sweep { to { left: 140%; } }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(45,212,167,0.6);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(45,212,167,0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(45,212,167,0); }
+    100% { box-shadow: 0 0 0 0 rgba(45,212,167,0); }
+  }
+  h1 {
+    font-size: 22px;
+    margin: 10px 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .sub { color: var(--muted); font-size: 13px; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 18px 0;
+  }
+  .stat {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .stat .n { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 600; }
+  .stat .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+  .stat.critical .n { color: var(--critical); }
+  .stat.high .n { color: var(--high); }
+  .stat.medium .n { color: var(--medium); }
+  .stat.total .n { color: var(--text); }
+
+  .filters {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .chip {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    background: var(--panel);
+    transition: all 0.15s;
+  }
+  .chip.active { border-color: var(--accent); color: var(--accent); background: rgba(45,212,167,0.08); }
+
+  .card {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 14px;
+    cursor: pointer;
+  }
+  .sev {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 5px;
+    flex-shrink: 0;
+  }
+  .sev.CRITICAL { background: rgba(229,72,77,0.15); color: var(--critical); }
+  .sev.HIGH { background: rgba(245,166,35,0.15); color: var(--high); }
+  .sev.MEDIUM { background: rgba(233,196,106,0.15); color: var(--medium); }
+  .card-title { flex: 1; font-size: 13.5px; font-weight: 500; }
+  .card-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); text-align: right; }
+  .score { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; color: var(--text); min-width: 28px; text-align: right; }
+
+  .card-body {
+    display: none;
+    padding: 0 14px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .card.open .card-body { display: block; }
+  .card-body p { font-size: 13px; color: var(--text); line-height: 1.5; margin: 12px 0 8px; }
+  .evidence {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .rule-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 24px; font-family: 'IBM Plex Mono', monospace; }
+
+  .ai-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(45,212,167,0.08);
+    border: 1px solid rgba(45,212,167,0.35);
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ai-btn:hover { background: rgba(45,212,167,0.15); }
+  .ai-btn:disabled { opacity: 0.5; cursor: default; }
+  .spinner {
+    width: 10px; height: 10px;
+    border: 2px solid rgba(45,212,167,0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .spinner.show { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .brief {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(45,212,167,0.05);
+    border: 1px solid rgba(45,212,167,0.2);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    display: none;
+  }
+  .brief.show { display: block; }
+  .brief .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .ask-panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 22px;
+  }
+  .ask-panel h2 {
+    font-size: 14px;
+    margin: 0 0 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ask-panel .sub2 { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .ask-row { display: flex; gap: 8px; }
+  .ask-row textarea {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    padding: 10px;
+    resize: none;
+    min-height: 42px;
+  }
+  .ask-row textarea:focus { outline: none; border-color: var(--accent); }
+  .ask-send {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--accent);
+    color: #06110D;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  .ask-send:disabled { opacity: 0.5; cursor: default; }
+  .ask-suggestions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .ask-suggestions .chip { font-size: 10.5px; }
+  .ask-answer {
+    margin-top: 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    display: none;
+  }
+  .ask-answer.show { display: block; }
+
+  .emerging-panel {
+    border: 1px solid rgba(91,141,239,0.3);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 14px;
+  }
+  .emerging-panel h2 { font-size: 14px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .emerging-panel textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    padding: 10px;
+    min-height: 70px;
+    resize: vertical;
+    margin-top: 10px;
+  }
+  .emerging-panel textarea:focus { outline: none; border-color: var(--low); }
+  .draft-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--low);
+    color: #06110D;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+    margin-top: 10px;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .draft-btn:disabled { opacity: 0.5; cursor: default; }
+  .rule-output { margin-top: 16px; display: none; }
+  .rule-output.show { display: block; }
+  .rule-section { margin-bottom: 12px; }
+  .rule-section .lbl {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--low);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+    display: block;
+  }
+  .rule-section p { font-size: 13px; line-height: 1.5; margin: 0; }
+  pre.code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #B8E6D5;
+    margin: 0;
+  }
+  .copy-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px 8px;
+    cursor: pointer;
+    float: right;
+  }
+  .review-note {
+    font-size: 11.5px;
+    color: var(--muted);
+    background: rgba(245,166,35,0.08);
+    border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 12px;
+  }
+  .hunt-section { margin-top: 12px; }
+  .hunt-item {
+    border-left: 2px solid var(--low);
+    background: rgba(91,141,239,0.05);
+    border-radius: 0 8px 8px 0;
+    padding: 8px 10px;
+    margin-top: 8px;
+  }
+  .hunt-type {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--low);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .hunt-rationale { font-size: 12.5px; color: var(--text); margin: 4px 0 6px; line-height: 1.5; }
+  .hunt-results {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow"><span class="dot"></span> LIVE MONITORING — DEMO DATASET</div>
+    <h1>Jicho Fraud Alert Console</h1>
+    <div class="sub">Rules engine tuned to East &amp; Central African fraud typologies — SIM-swap cash-out, mule fan-in, agent till anomalies, structuring, insider collusion, rapid layering.</div>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="filters" id="filters"></div>
+
+  <div id="alertList"></div>
+
+  <div class="ask-panel">
+    <h2><span class="dot" style="animation:none;box-shadow:none;"></span> Ask Jicho</h2>
+    <div class="sub2">AI agent grounded only in the alerts currently on screen — ask it to prioritize, summarize, or explain a pattern.</div>
+    <div class="ask-row">
+      <textarea id="askInput" placeholder="e.g. Which alerts should the team investigate first today, and why?"></textarea>
+      <button class="ask-send" id="askSend" onclick="askJicho()">Ask</button>
+    </div>
+    <div class="ask-suggestions">
+      <div class="chip" onclick="askPreset('Which alerts should we investigate first today, and why?')">Prioritize today</div>
+      <div class="chip" onclick="askPreset('Summarize the fraud patterns seen across all alerts in 3 sentences.')">Summarize patterns</div>
+      <div class="chip" onclick="askPreset('Which of these look like they could be linked to the same fraud ring?')">Spot linked accounts</div>
+    </div>
+    <div class="spinner" id="askSpinner" style="margin-top:12px;"></div>
+    <div class="ask-answer" id="askAnswer"></div>
+  </div>
+
+  <div class="emerging-panel">
+    <h2 style="color:var(--low);">🛰️ Emerging Threat → Draft Detection Rule</h2>
+    <div class="sub2">Describe a new fraud scenario your team has spotted (a scam call script, a new app-based fraud, a pattern from a fresh case). The agent drafts a candidate rule in the same style as the existing engine — <b>a human reviews and tests it before it goes live</b>, this does not auto-deploy.</div>
+    <textarea id="scenarioInput" placeholder="e.g. Fraudsters are calling customers claiming to be from the bank's fraud department, convincing them to move money to a 'safe account' they control, then immediately cashing out at an agent in a different region within the hour."></textarea>
+    <button class="draft-btn" id="draftBtn" onclick="draftRule()">
+      <span class="spinner" id="draftSpinner"></span>
+      <span id="draftLabel">Analyze scenario &amp; draft rule</span>
+    </button>
+    <div class="rule-output" id="ruleOutput"></div>
+  </div>
+
+  <footer>JICHO — "the eye" · rules-based detection + AI investigation &amp; rule-drafting agents · v0.3 prototype</footer>
+</div>
+
+<script>
+const ALERTS = [{"rule_id": "R1", "rule_name": "SIM-Swap Cash-Out", "account_id": "ACC2001", "transaction_id": "TXN000152", "timestamp": "2026-08-20 18:00:00", "severity": "CRITICAL", "score": 95, "description": "Withdrawal of 1,800,000 occurred 0 days 02:00:00 after a SIM/device change on this account.", "evidence": {"sim_swap_time": "2026-08-20 16:00:00", "withdrawal_amount": 1800000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC1501", "distance": 0.678}, {"account_id": "ACC2005", "distance": 0.697}, {"account_id": "ACC3002", "distance": 0.747}]}]}, {"rule_id": "R8", "rule_name": "Dormant Account Sudden Inflow + Sweep", "account_id": "ACC4001", "transaction_id": "TXN000176", "timestamp": "2026-08-23 04:00:00", "severity": "CRITICAL", "score": 93, "description": "Account with no prior activity received 3,200,000 then swept out 94% of it within 6.0h \u2014 matches the mule-account pattern seen on EFT rails without payee-name verification.", "evidence": {"inflow_amount": 3200000.0, "outflow_ratio": 0.9375}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 2 other account(s) within 3 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "ACC4002", "hop": 1}, {"account_id": "VICTIM01", "hop": 1}]}]}, {"rule_id": "R7", "rule_name": "Rapid Cross-Account Layering", "account_id": "ACC2006", "transaction_id": "TXN000173", "timestamp": "2026-08-22 18:00:00", "severity": "CRITICAL", "score": 92, "description": "Funds moved through 3 accounts within 45.0 minutes \u2014 pattern consistent with layering to exhaust per-institution monitoring thresholds.", "evidence": {"hop_count": 3, "path": ["ACC2006", "ACC2007", "ACC2008"]}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 3 other account(s) within 5 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "ACC2007", "hop": 1}, {"account_id": "ACC2008", "hop": 2}, {"account_id": "ACC2009", "hop": 3}]}]}, {"rule_id": "R13", "rule_name": "Cross-Border Card Velocity", "account_id": "CARD9001", "transaction_id": "TXN000202", "timestamp": "2026-08-24 11:00:00", "severity": "CRITICAL", "score": 91, "description": "Same card used in TZ then KE within 0 days 01:00:00 \u2014 too fast for legitimate travel, consistent with a cloned card used in two locations.", "evidence": {"country_a": "TZ", "country_b": "KE", "gap_seconds": 3600.0}, "suggested_hunts": [{"hunt_type": "card_id_activity", "rationale": "This card has 2 transaction(s) touching 2 account(s) in the dataset \u2014 pull the full card history before deciding this is an isolated incident.", "results": ["ACC9001", "ACC9002"]}]}, {"rule_id": "R4", "rule_name": "Money-Mule Fan-In / Sweep-Out", "account_id": "ACC2004", "transaction_id": "TXN000162", "timestamp": "2026-08-21 22:00:00", "severity": "CRITICAL", "score": 90, "description": "Received funds from 6 distinct senders then moved out 92% of inflows within 6.0h \u2014 classic mule pattern.", "evidence": {"distinct_senders": 6, "outflow_ratio": 0.9166666666666666}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 7 other account(s) within 2 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "MULE_NEXT", "hop": 1}, {"account_id": "SENDER0", "hop": 1}, {"account_id": "SENDER1", "hop": 1}, {"account_id": "SENDER2", "hop": 1}, {"account_id": "SENDER3", "hop": 1}, {"account_id": "SENDER4", "hop": 1}, {"account_id": "SENDER5", "hop": 1}]}, {"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC4001", "distance": 1.074}, {"account_id": "ACC1003", "distance": 1.39}, {"account_id": "ACC1017", "distance": 1.5}]}]}, {"rule_id": "R16", "rule_name": "BEC-Pattern Payment Redirection", "account_id": "ACC1301", "transaction_id": "TXN000213", "timestamp": "2026-08-25 03:00:00", "severity": "CRITICAL", "score": 89, "description": "A high-value transfer of 4,500,000 followed a beneficiary detail change by 0 days 02:00:00 \u2014 matches the standard BEC payment-redirection signature: an urgent payment sent to a newly-changed beneficiary.", "evidence": {"beneficiary_change_time": "2026-08-25 01:00:00", "transfer_amount": 4500000.0}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 1 other account(s) within 3 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "NEWBENEFICIARY", "hop": 1}]}, {"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC2008", "distance": 0.504}, {"account_id": "ACC2007", "distance": 0.507}, {"account_id": "ACC2006", "distance": 0.51}]}]}, {"rule_id": "R17", "rule_name": "Credential-Phishing Account Takeover", "account_id": "ACC1401", "transaction_id": "TXN000215", "timestamp": "2026-08-25 06:15:00", "severity": "CRITICAL", "score": 88, "description": "A transaction of 900,000 occurred 0 days 00:15:00 after a flagged suspicious login (new device/location/impossible-travel login) \u2014 consistent with account takeover following credential phishing, independent of which channel (SIM-swap, malware, or phishing) delivered the credentials.", "evidence": {"suspicious_login_time": "2026-08-25 06:00:00", "amount": 900000.0}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 1 other account(s) within 3 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "ATTACKER_ACCT", "hop": 1}]}]}, {"rule_id": "R18", "rule_name": "Rapid Multi-Terminal ATM Withdrawal", "account_id": "ACC1501", "transaction_id": "TXN000217", "timestamp": "2026-08-25 11:08:00", "severity": "HIGH", "score": 84, "description": "Withdrawals at two physically distinct ATM terminals (ATM_CITY_A then ATM_CITY_B) within 0 days 00:08:00 \u2014 too fast for legitimate travel between machines, consistent with a cloned card or payment-switch routing abuse.", "evidence": {"terminal_a": "ATM_CITY_A", "terminal_b": "ATM_CITY_B", "gap_seconds": 480.0}, "suggested_hunts": []}, {"rule_id": "R10", "rule_name": "Loan-App Disbursement Rapid Cash-Out", "account_id": "ACC6001", "transaction_id": "TXN000187", "timestamp": "2026-08-23 19:00:00", "severity": "HIGH", "score": 82, "description": "Loan disbursement of 900,000 was 98% cashed out within 2.0h of disbursement \u2014 pattern flagged by Interpol as linked to fraudulent mobile loan-app rings.", "evidence": {"disbursement_amount": 900000.0, "cashout_ratio": 0.9777777777777777}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC1003", "distance": 0.907}, {"account_id": "ACC1032", "distance": 0.926}, {"account_id": "ACC1023", "distance": 0.951}]}]}, {"rule_id": "R15", "rule_name": "Offline Authorization Abuse", "account_id": "ACC1201", "transaction_id": "TXN000208", "timestamp": "2026-08-24 20:00:00", "severity": "HIGH", "score": 81, "description": "4 offline-authorized transactions totaling 1,800,000 within 4.0h \u2014 offline mode skips real-time balance/velocity checks, a known vector for excess-spend fraud once a terminal or network segment goes offline.", "evidence": {"offline_txn_count": 4, "total_amount": 1800000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC8001", "distance": 0.0}, {"account_id": "ACC1100", "distance": 0.5}, {"account_id": "ACC1101", "distance": 0.5}]}]}, {"rule_id": "R6", "rule_name": "Off-Hours Staff-Initiated Transaction", "account_id": "ACC2005", "transaction_id": "TXN000172", "timestamp": "2026-08-23 01:30:00", "severity": "HIGH", "score": 80, "description": "Staff-initiated transaction of 3,500,000 at 01:30, outside normal business hours \u2014 possible insider collusion.", "evidence": {"hour": 1, "amount": 3500000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC2001", "distance": 0.697}, {"account_id": "ACC3002", "distance": 0.771}, {"account_id": "ACC3003", "distance": 0.829}]}]}, {"rule_id": "R12", "rule_name": "Card Testing Pattern", "account_id": "CARD8001", "transaction_id": "TXN000197", "timestamp": "2026-08-24 05:00:00", "severity": "HIGH", "score": 79, "description": "4 small POS transactions (\u226420,000) on this card within 20.0 minutes \u2014 pattern consistent with a stolen card being tested for validity before a larger purchase.", "evidence": {"txn_count": 4}, "suggested_hunts": [{"hunt_type": "card_id_activity", "rationale": "This card has 4 transaction(s) touching 1 account(s) in the dataset \u2014 pull the full card history before deciding this is an isolated incident.", "results": ["ACC8001"]}]}, {"rule_id": "R9", "rule_name": "Synchronized Multi-Account Withdrawal Spike", "account_id": "PORTFOLIO", "transaction_id": "TXN000178", "timestamp": "2026-08-23 14:00:00", "severity": "HIGH", "score": 78, "description": "9 unrelated accounts attempted withdrawals within 30.0 minutes \u2014 consistent with a panic run following an investment/forex scheme collapse or public scam alert.", "evidence": {"distinct_accounts": 9, "window_start": "2026-08-23 14:00:00"}, "suggested_hunts": []}, {"rule_id": "R11", "rule_name": "EMV Fallback Abuse", "account_id": "MERCH900", "transaction_id": "TXN000196", "timestamp": "2026-08-24 00:35:00", "severity": "HIGH", "score": 76, "description": "Merchant's magstripe-fallback rate is 75.0% of 8 card-present transactions \u2014 above Visa's 1.5% excessive-fallback threshold (VAMP, 2026). Consistent with intentionally damaged chips forcing fallback to cloned magstripe cards.", "evidence": {"fallback_ratio": 0.75, "sample_size": 8}, "suggested_hunts": [{"hunt_type": "merchant_id_activity", "rationale": "This merchant has 8 transaction(s) touching 8 account(s) in the dataset \u2014 pull the full merchant history before deciding this is an isolated incident.", "results": ["ACC7000", "ACC7001", "ACC7002", "ACC7003", "ACC7004", "ACC7005", "ACC7006", "ACC7007"]}]}, {"rule_id": "R2", "rule_name": "Velocity Spike", "account_id": "ACC2002", "transaction_id": "TXN000153", "timestamp": "2026-08-21 02:00:00", "severity": "HIGH", "score": 75, "description": "5 outbound transactions within 30.0 minutes starting 2026-08-21 02:00:00.", "evidence": {"txn_count_in_window": 5}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC1001", "distance": 0.542}, {"account_id": "ACC1038", "distance": 0.604}, {"account_id": "ACC1501", "distance": 0.641}]}]}, {"rule_id": "R5", "rule_name": "Agent Till Cash-Out Anomaly", "account_id": "AGENT500", "transaction_id": "TXN000171", "timestamp": "2026-08-20 21:20:00", "severity": "HIGH", "score": 70, "description": "Agent till shows cash-out 14.0x cash-in volume \u2014 consistent with unrecorded OTC transactions bypassing customer wallets.", "evidence": {"cash_out_total": 1400000.0, "cash_in_total": 100000.0}, "suggested_hunts": [{"hunt_type": "agent_till_activity", "rationale": "3 distinct accounts transacted through this agent till \u2014 pull the full till history, not just this one flagged transaction, before deciding whether the agent itself is compromised or complicit.", "results": ["ACC3001", "ACC3002", "ACC3003"]}]}, {"rule_id": "R14", "rule_name": "Merchant Refund Anomaly", "account_id": "MERCH700", "transaction_id": "TXN000207", "timestamp": "2026-08-24 16:05:00", "severity": "MEDIUM", "score": 64, "description": "Refunds are 63% of this merchant's sales volume \u2014 consistent with return fraud or merchant collusion rather than genuine returns.", "evidence": {"refund_ratio": 0.6333333333333333, "sales_total": 600000.0, "refund_total": 380000.0}, "suggested_hunts": [{"hunt_type": "merchant_id_activity", "rationale": "This merchant has 5 transaction(s) touching 3 account(s) in the dataset \u2014 pull the full merchant history before deciding this is an isolated incident.", "results": ["ACC1100", "ACC1101", "ACC1102"]}]}, {"rule_id": "R3", "rule_name": "Structuring / Smurfing", "account_id": "ACC2003", "transaction_id": "TXN000158", "timestamp": "2026-08-21 12:00:00", "severity": "MEDIUM", "score": 60, "description": "4 deposits just below the 10,000,000 reporting threshold within 24.0h.", "evidence": {"deposit_count": 4, "threshold": 10000000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC8001", "distance": 1.0}, {"account_id": "ACC1201", "distance": 1.0}, {"account_id": "ACC1019", "distance": 1.107}]}]}];
+
+const sevOrder = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3};
+ALERTS.sort((a,b) => sevOrder[a.severity] - sevOrder[b.severity] || b.score - a.score);
+
+function renderStats() {
+  const counts = {CRITICAL:0, HIGH:0, MEDIUM:0};
+  ALERTS.forEach(a => counts[a.severity] = (counts[a.severity]||0)+1);
+  const el = document.getElementById('stats');
+  el.innerHTML = `
+    <div class="stat total"><div class="n">${ALERTS.length}</div><div class="l">Total Alerts</div></div>
+    <div class="stat critical"><div class="n">${counts.CRITICAL||0}</div><div class="l">Critical</div></div>
+    <div class="stat high"><div class="n">${counts.HIGH||0}</div><div class="l">High</div></div>
+    <div class="stat medium"><div class="n">${counts.MEDIUM||0}</div><div class="l">Medium</div></div>
+  `;
+}
+
+let activeFilter = 'ALL';
+function renderFilters() {
+  const sevs = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM'];
+  const el = document.getElementById('filters');
+  el.innerHTML = sevs.map(s => `<div class="chip ${s===activeFilter?'active':''}" data-sev="${s}">${s}</div>`).join('');
+  el.querySelectorAll('.chip').forEach(chip => {
+    chip.onclick = () => { activeFilter = chip.dataset.sev; renderFilters(); renderList(); };
+  });
+}
+
+function renderList() {
+  const list = activeFilter === 'ALL' ? ALERTS : ALERTS.filter(a => a.severity === activeFilter);
+  const el = document.getElementById('alertList');
+  el.innerHTML = list.map((a, i) => `
+    <div class="card" id="card-${i}">
+      <div class="card-head" onclick="document.getElementById('card-${i}').classList.toggle('open')">
+        <div class="sev ${a.severity}">${a.severity}</div>
+        <div class="card-title">${a.rule_name}<div class="rule-tag">${a.rule_id} · acct ${a.account_id}</div></div>
+        <div class="card-meta">${a.timestamp.split('.')[0]}</div>
+        <div class="score">${a.score}</div>
+      </div>
+      <div class="card-body">
+        <p>${a.description}</p>
+        <div class="evidence">${JSON.stringify(a.evidence, null, 2)}</div>
+        ${renderHunts(a.suggested_hunts)}
+        <button class="ai-btn" id="briefBtn-${i}" onclick="generateBrief(${i}, event)">
+          <span class="spinner" id="briefSpin-${i}"></span>
+          <span id="briefLabel-${i}">🔎 Generate AI investigation brief</span>
+        </button>
+        <div class="brief" id="brief-${i}"><span class="tag">AI Investigation Brief</span><div id="briefText-${i}"></div></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderHunts(hunts) {
+  if (!hunts || hunts.length === 0) return '';
+  const items = hunts.map(h => `
+    <div class="hunt-item">
+      <span class="hunt-type">${h.hunt_type.replace(/_/g, ' ')}</span>
+      <div class="hunt-rationale">${h.rationale}</div>
+      <div class="hunt-results">${Array.isArray(h.results) ? h.results.map(r => typeof r === 'object' ? JSON.stringify(r) : r).join(', ') : ''}</div>
+    </div>
+  `).join('');
+  return `<div class="hunt-section"><span class="lbl" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--low);text-transform:uppercase;letter-spacing:0.08em;">🧭 Suggested hunts</span>${items}</div>`;
+}
+
+renderStats();
+renderFilters();
+renderList();
+
+// ---------------- AI Agent layer ----------------
+// Calls the Anthropic API (proxied by the Claude.ai artifact sandbox — no key needed here).
+// If this dashboard is deployed outside that sandbox, point this at your own backend
+// which holds the real API key server-side.
+async function callClaude(systemPrompt, userPrompt) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }]
+    })
+  });
+  if (!response.ok) throw new Error("API request failed: " + response.status);
+  const data = await response.json();
+  return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+}
+
+const BRIEF_SYSTEM_PROMPT = `You are a fraud investigation analyst supporting a compliance team at
+an East/Central African financial institution. You will be given one fraud alert (rule that fired,
+account, evidence). Write a short, professional investigation brief with exactly these sections:
+1) What happened — plain-language summary of the transaction pattern.
+2) Why it's suspicious — tie it to the known fraud typology for this region.
+3) Recommended action — one of: Monitor only / Contact customer to verify / Freeze account pending review / Escalate to law enforcement & regulator — with one sentence of justification.
+4) Next data to pull — what the investigator should check next (e.g. KYC record, device history, related accounts).
+Only use facts given in the alert. Do not invent account holder names, phone numbers, or other details not provided. Keep it under 150 words.`;
+
+async function generateBrief(i, evt) {
+  evt.stopPropagation();
+  const alert = (activeFilter === 'ALL' ? ALERTS : ALERTS.filter(a => a.severity === activeFilter))[i];
+  const btn = document.getElementById(`briefBtn-${i}`);
+  const spin = document.getElementById(`briefSpin-${i}`);
+  const label = document.getElementById(`briefLabel-${i}`);
+  const briefBox = document.getElementById(`brief-${i}`);
+  const briefText = document.getElementById(`briefText-${i}`);
+
+  btn.disabled = true;
+  spin.classList.add('show');
+  label.textContent = 'Generating…';
+
+  try {
+    const prompt = `Alert: ${JSON.stringify(alert, null, 2)}`;
+    const result = await callClaude(BRIEF_SYSTEM_PROMPT, prompt);
+    briefText.textContent = result;
+    briefBox.classList.add('show');
+    label.textContent = '✓ Brief generated — click to view above';
+  } catch (e) {
+    briefText.textContent = "Couldn't generate a brief (" + e.message + "). This agent calls the Anthropic API directly from the browser, which only works inside Claude.ai's artifact sandbox — wire it to your own backend for standalone deployment.";
+    briefBox.classList.add('show');
+    label.textContent = '⚠ Generation failed — see note above';
+  } finally {
+    spin.classList.remove('show');
+    btn.disabled = false;
+  }
+}
+
+const ASK_SYSTEM_PROMPT = `You are Jicho, an AI fraud-analytics assistant embedded in a bank's fraud
+operations console in East Africa. You are given the full list of currently open fraud alerts as JSON.
+Answer the compliance officer's question using ONLY that data — do not invent accounts, amounts, or
+details not present in it. Be concise and direct, formatted for quick reading on a dashboard (short
+paragraphs or a short list, not long prose). If the question can't be answered from the given data, say so.`;
+
+function askPreset(q) {
+  document.getElementById('askInput').value = q;
+  askJicho();
+}
+
+async function askJicho() {
+  const input = document.getElementById('askInput');
+  const question = input.value.trim();
+  if (!question) return;
+  const sendBtn = document.getElementById('askSend');
+  const spinner = document.getElementById('askSpinner');
+  const answerBox = document.getElementById('askAnswer');
+
+  sendBtn.disabled = true;
+  spinner.classList.add('show');
+  answerBox.classList.remove('show');
+
+  try {
+    const prompt = `Alerts data:\n${JSON.stringify(ALERTS, null, 2)}\n\nQuestion: ${question}`;
+    const result = await callClaude(ASK_SYSTEM_PROMPT, prompt);
+    answerBox.textContent = result;
+    answerBox.classList.add('show');
+  } catch (e) {
+    answerBox.textContent = "Couldn't reach the AI agent (" + e.message + "). This works inside Claude.ai's artifact sandbox; for standalone deployment, route this call through your own backend holding the API key.";
+    answerBox.classList.add('show');
+  } finally {
+    spinner.classList.remove('show');
+    sendBtn.disabled = false;
+  }
+}
+
+// ---------------- Emerging-threat → rule drafting agent ----------------
+let nextRuleId = 8; // R1-R7 already exist in rules_engine.py
+
+const RULE_DRAFT_SYSTEM_PROMPT = `You are a fraud detection engineer at an East/Central African bank,
+extending an existing Python rules engine. You will be given: (1) the transaction data schema the
+engine works with, (2) the next available rule ID, and (3) a plain-language description of a new/emerging
+fraud scenario from an analyst. Your job is to draft a NEW detection rule matching the existing engine's
+style and conventions.
+
+Transaction schema (a pandas DataFrame, one row per transaction/event):
+transaction_id, account_id, transaction_type (deposit/withdrawal/transfer_in/transfer_out/cash_in/cash_out/sim_swap),
+amount, timestamp, channel (mobile_money/bank_transfer/agent/card), counterparty_id, agent_id,
+initiated_by_staff (bool), event_type.
+
+Existing rule methods follow this exact pattern:
+  def rule_name(self, df: pd.DataFrame):
+      cfg = self.cfg
+      ... filter/group df with pandas ...
+      self.alerts.append(Alert(
+          rule_id="R{n}", rule_name="...", account_id=..., transaction_id=...,
+          timestamp=..., severity="LOW/MEDIUM/HIGH/CRITICAL", score=0-100,
+          description="...", evidence={...}
+      ))
+
+Respond with ONLY a raw JSON object (no markdown fences, no preamble, no commentary outside the JSON) with these exact keys:
+{
+  "rule_id": "R{n}",
+  "rule_name": "short name",
+  "typology_summary": "1-2 sentences on the fraud pattern described",
+  "detection_logic": "plain-language explanation of the exact conditions that should trigger this rule",
+  "python_code": "a complete Python method (def rule_xxx(self, df): ...) implementing the logic, following the existing pattern exactly, using self.cfg for any tunable thresholds",
+  "config_additions": {"new_config_key": suggested_default_value},
+  "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+  "score": 0-100,
+  "caveats": "honest notes on false-positive risk, what real transaction data would be needed to validate thresholds, and any data the engine doesn't currently capture that this rule would actually need"
+}
+If the scenario genuinely cannot be detected from the given schema alone (e.g. it depends on call-center data, KYC documents, or biometrics the engine doesn't have), say so plainly in "caveats" and still provide the closest proxy-signal rule that IS detectable from this schema, noting its limitations.`;
+
+async function draftRule() {
+  const input = document.getElementById('scenarioInput');
+  const scenario = input.value.trim();
+  if (!scenario) return;
+  const btn = document.getElementById('draftBtn');
+  const spin = document.getElementById('draftSpinner');
+  const label = document.getElementById('draftLabel');
+  const out = document.getElementById('ruleOutput');
+
+  btn.disabled = true;
+  spin.classList.add('show');
+  label.textContent = 'Analyzing scenario…';
+  out.classList.remove('show');
+
+  try {
+    const prompt = `Next available rule ID: R${nextRuleId}\n\nAnalyst-reported scenario:\n${scenario}`;
+    const raw = await callClaude(RULE_DRAFT_SYSTEM_PROMPT, prompt);
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const rule = JSON.parse(cleaned);
+
+    out.innerHTML = `
+      <div class="rule-section">
+        <span class="lbl">${rule.rule_id} · ${rule.rule_name}</span>
+        <p>${rule.typology_summary}</p>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Detection Logic</span>
+        <p>${rule.detection_logic}</p>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Severity / Score</span>
+        <p>${rule.severity} · score ${rule.score}</p>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Drafted Python Rule <button class="copy-btn" onclick="copyCode(this)">Copy</button></span>
+        <pre class="code-block">${escapeHtml(rule.python_code)}</pre>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Suggested Config Additions</span>
+        <pre class="code-block">${escapeHtml(JSON.stringify(rule.config_additions, null, 2))}</pre>
+      </div>
+      <div class="review-note">⚠ Human review required: paste this into rules_engine.py, add a call to it in run_all(), and validate thresholds against real (or realistic) transaction volumes before relying on it — this is a draft, not a deployed rule.<br><br><b>Caveats from the agent:</b> ${rule.caveats}</div>
+    `;
+    out.classList.add('show');
+    nextRuleId++;
+    label.textContent = 'Analyze scenario & draft rule';
+  } catch (e) {
+    out.innerHTML = `<div class="review-note">Couldn't draft a rule (${e.message}). This agent calls the Anthropic API directly from the browser, which only works inside Claude.ai's artifact sandbox — wire it to your own backend for standalone deployment. If the API responded but wasn't valid JSON, try rephrasing the scenario more concretely (what data changes, in what order, over what time window).</div>`;
+    out.classList.add('show');
+    label.textContent = 'Analyze scenario & draft rule';
+  } finally {
+    spin.classList.remove('show');
+    btn.disabled = false;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function copyCode(btn) {
+  const code = btn.closest('.rule-section').querySelector('.code-block').textContent;
+  navigator.clipboard.writeText(code);
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy', 1500);
+}
+</script>
+</body>
+</html>
