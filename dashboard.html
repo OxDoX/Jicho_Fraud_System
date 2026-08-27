@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jicho — Fraud Alert Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0E17;
+    --panel: #10151F;
+    --panel-2: #151C29;
+    --border: #212A3A;
+    --text: #E7ECF4;
+    --muted: #7C8AA5;
+    --accent: #2DD4A7;
+    --critical: #E5484D;
+    --high: #F5A623;
+    --medium: #E9C46A;
+    --low: #5B8DEF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  header {
+    position: relative;
+    padding: 22px 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  header::before {
+    content: "";
+    position: absolute;
+    top: 0; left: -40%;
+    width: 40%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(45,212,167,0.08), transparent);
+    animation: sweep 4.5s linear infinite;
+  }
+  @keyframes sweep { to { left: 140%; } }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(45,212,167,0.6);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(45,212,167,0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(45,212,167,0); }
+    100% { box-shadow: 0 0 0 0 rgba(45,212,167,0); }
+  }
+  h1 {
+    font-size: 22px;
+    margin: 10px 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .sub { color: var(--muted); font-size: 13px; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 18px 0;
+  }
+  .stat {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .stat .n { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 600; }
+  .stat .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+  .stat.critical .n { color: var(--critical); }
+  .stat.high .n { color: var(--high); }
+  .stat.medium .n { color: var(--medium); }
+  .stat.total .n { color: var(--text); }
+
+  .filters {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .chip {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    background: var(--panel);
+    transition: all 0.15s;
+  }
+  .chip.active { border-color: var(--accent); color: var(--accent); background: rgba(45,212,167,0.08); }
+
+  .card {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 14px;
+    cursor: pointer;
+  }
+  .sev {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 5px;
+    flex-shrink: 0;
+  }
+  .sev.CRITICAL { background: rgba(229,72,77,0.15); color: var(--critical); }
+  .sev.HIGH { background: rgba(245,166,35,0.15); color: var(--high); }
+  .sev.MEDIUM { background: rgba(233,196,106,0.15); color: var(--medium); }
+  .card-title { flex: 1; font-size: 13.5px; font-weight: 500; }
+  .card-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); text-align: right; }
+  .score { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; color: var(--text); min-width: 28px; text-align: right; }
+
+  .card-body {
+    display: none;
+    padding: 0 14px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .card.open .card-body { display: block; }
+  .card-body p { font-size: 13px; color: var(--text); line-height: 1.5; margin: 12px 0 8px; }
+  .evidence {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .rule-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 24px; font-family: 'IBM Plex Mono', monospace; }
+
+  .ai-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(45,212,167,0.08);
+    border: 1px solid rgba(45,212,167,0.35);
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ai-btn:hover { background: rgba(45,212,167,0.15); }
+  .ai-btn:disabled { opacity: 0.5; cursor: default; }
+  .spinner {
+    width: 10px; height: 10px;
+    border: 2px solid rgba(45,212,167,0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .spinner.show { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .brief {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(45,212,167,0.05);
+    border: 1px solid rgba(45,212,167,0.2);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    display: none;
+  }
+  .brief.show { display: block; }
+  .brief .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .ask-panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 22px;
+  }
+  .ask-panel h2 {
+    font-size: 14px;
+    margin: 0 0 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ask-panel .sub2 { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .ask-row { display: flex; gap: 8px; }
+  .ask-row textarea {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    padding: 10px;
+    resize: none;
+    min-height: 42px;
+  }
+  .ask-row textarea:focus { outline: none; border-color: var(--accent); }
+  .ask-send {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--accent);
+    color: #06110D;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  .ask-send:disabled { opacity: 0.5; cursor: default; }
+  .ask-suggestions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .ask-suggestions .chip { font-size: 10.5px; }
+  .ask-answer {
+    margin-top: 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    display: none;
+  }
+  .ask-answer.show { display: block; }
+
+  .emerging-panel {
+    border: 1px solid rgba(91,141,239,0.3);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 14px;
+  }
+  .emerging-panel h2 { font-size: 14px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .emerging-panel textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    padding: 10px;
+    min-height: 70px;
+    resize: vertical;
+    margin-top: 10px;
+  }
+  .emerging-panel textarea:focus { outline: none; border-color: var(--low); }
+  .draft-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--low);
+    color: #06110D;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+    margin-top: 10px;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .draft-btn:disabled { opacity: 0.5; cursor: default; }
+  .rule-output { margin-top: 16px; display: none; }
+  .rule-output.show { display: block; }
+  .rule-section { margin-bottom: 12px; }
+  .rule-section .lbl {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--low);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+    display: block;
+  }
+  .rule-section p { font-size: 13px; line-height: 1.5; margin: 0; }
+  pre.code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #B8E6D5;
+    margin: 0;
+  }
+  .copy-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px 8px;
+    cursor: pointer;
+    float: right;
+  }
+  .review-note {
+    font-size: 11.5px;
+    color: var(--muted);
+    background: rgba(245,166,35,0.08);
+    border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 12px;
+  }
+  .hunt-section { margin-top: 12px; }
+  .hunt-item {
+    border-left: 2px solid var(--low);
+    background: rgba(91,141,239,0.05);
+    border-radius: 0 8px 8px 0;
+    padding: 8px 10px;
+    margin-top: 8px;
+  }
+  .hunt-type {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--low);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .hunt-rationale { font-size: 12.5px; color: var(--text); margin: 4px 0 6px; line-height: 1.5; }
+  .hunt-results {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .hunt-panel {
+    border: 1px solid rgba(91,141,239,0.3);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 22px;
+  }
+  .hunt-panel h2 { font-size: 14px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; color: var(--low); }
+  .hunt-panel .sub2 { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .hunt-tabs { display: flex; gap: 6px; margin: 14px 0; }
+  .hunt-tab {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    background: var(--bg);
+  }
+  .hunt-tab.active { border-color: var(--low); color: var(--low); background: rgba(91,141,239,0.08); }
+  .search-panel, .network-panel { display: none; }
+  .search-panel.active, .network-panel.active { display: block; }
+  .hunt-form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .hunt-field { display: flex; flex-direction: column; }
+  .hunt-field label {
+    font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; margin-bottom: 3px;
+  }
+  .hunt-form input, .hunt-form select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 12px;
+    padding: 7px 9px;
+    width: 100%;
+  }
+  .hunt-form input:focus, .hunt-form select:focus { outline: none; border-color: var(--low); }
+  .hunt-run-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--low);
+    color: #06110D;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+    margin-top: 12px;
+  }
+  .hunt-summary { font-size: 12px; color: var(--muted); margin: 12px 0 8px; font-family: 'IBM Plex Mono', monospace; }
+  .hunt-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: 'IBM Plex Mono', monospace; }
+  .hunt-table th {
+    text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px;
+    border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .hunt-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .hunt-table tr:last-child td { border-bottom: none; }
+  .hunt-empty { font-size: 12px; color: var(--muted); padding: 10px 0; font-style: italic; }
+  .network-svg-wrap {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; margin-top: 14px; overflow: auto;
+  }
+  .network-node-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: var(--text); }
+  .shared-attr-note {
+    font-size: 12px; color: var(--muted); margin-top: 10px; padding: 8px 10px;
+    background: rgba(91,141,239,0.05); border-left: 2px solid var(--low); border-radius: 0 6px 6px 0;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow"><span class="dot"></span> LIVE MONITORING — DEMO DATASET</div>
+    <h1>Jicho Fraud Alert Console</h1>
+    <div class="sub">Rules engine tuned to East &amp; Central African fraud typologies — SIM-swap cash-out, mule fan-in, agent till anomalies, structuring, insider collusion, rapid layering.</div>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="filters" id="filters"></div>
+
+  <div id="alertList"></div>
+
+  <div class="hunt-panel">
+    <h2>🧭 Fraud Hunting — proactive investigation</h2>
+    <div class="sub2">Everything above is reactive: a rule fires, or it doesn't. This is the other half — start from a lead (a suspicious account, a hunch) and search the raw transaction data directly, the way an investigator threat-hunts rather than waiting for an alert.</div>
+    <div class="hunt-tabs">
+      <div class="hunt-tab active" data-tab="search" onclick="switchHuntTab('search')">Ad-hoc search</div>
+      <div class="hunt-tab" data-tab="network" onclick="switchHuntTab('network')">Account network</div>
+    </div>
+
+    <div class="search-panel active" id="huntSearchPanel">
+      <div class="hunt-form">
+        <div class="hunt-field"><label>Account ID</label><input id="hf-account" placeholder="e.g. ACC2001"></div>
+        <div class="hunt-field"><label>Counterparty ID</label><input id="hf-counterparty" placeholder="e.g. ACC2002"></div>
+        <div class="hunt-field"><label>Agent ID</label><input id="hf-agent" placeholder="e.g. AGENT500"></div>
+        <div class="hunt-field"><label>Card ID</label><input id="hf-card" placeholder="e.g. CARD9001"></div>
+        <div class="hunt-field"><label>Merchant ID</label><input id="hf-merchant" placeholder="e.g. MERCH900"></div>
+        <div class="hunt-field"><label>Channel</label><select id="hf-channel"><option value="">Any</option></select></div>
+        <div class="hunt-field"><label>Transaction type</label><select id="hf-type"><option value="">Any</option></select></div>
+        <div class="hunt-field"><label>Min amount</label><input id="hf-min" type="number" placeholder="0"></div>
+        <div class="hunt-field"><label>Max amount</label><input id="hf-max" type="number" placeholder="e.g. 5000000"></div>
+      </div>
+      <button class="hunt-run-btn" onclick="runHuntSearch()">Search</button>
+      <div id="huntSearchResults"></div>
+    </div>
+
+    <div class="network-panel" id="huntNetworkPanel">
+      <div class="sub2" style="margin-top:0;">Breadth-first traversal of the counterparty graph from a seed account — the same link analysis <code>jicho.hunting.account_network()</code> runs, out to however many hops you choose.</div>
+      <div class="hunt-form" style="grid-template-columns: 1fr 1fr;">
+        <div class="hunt-field"><label>Seed account ID</label><input id="net-seed" placeholder="e.g. ACC2006"></div>
+        <div class="hunt-field"><label>Max hops</label><input id="net-hops" type="number" value="3" min="1" max="6"></div>
+      </div>
+      <button class="hunt-run-btn" onclick="runNetworkHunt()">Trace network</button>
+      <div id="huntNetworkResults"></div>
+    </div>
+  </div>
+
+  <div class="ask-panel">
+    <h2><span class="dot" style="animation:none;box-shadow:none;"></span> Ask Jicho</h2>
+    <div class="sub2">AI agent grounded only in the alerts currently on screen — ask it to prioritize, summarize, or explain a pattern.</div>
+    <div class="ask-row">
+      <textarea id="askInput" placeholder="e.g. Which alerts should the team investigate first today, and why?"></textarea>
+      <button class="ask-send" id="askSend" onclick="askJicho()">Ask</button>
+    </div>
+    <div class="ask-suggestions">
+      <div class="chip" onclick="askPreset('Which alerts should we investigate first today, and why?')">Prioritize today</div>
+      <div class="chip" onclick="askPreset('Summarize the fraud patterns seen across all alerts in 3 sentences.')">Summarize patterns</div>
+      <div class="chip" onclick="askPreset('Which of these look like they could be linked to the same fraud ring?')">Spot linked accounts</div>
+    </div>
+    <div class="spinner" id="askSpinner" style="margin-top:12px;"></div>
+    <div class="ask-answer" id="askAnswer"></div>
+  </div>
+
+  <div class="emerging-panel">
+    <h2 style="color:var(--low);">🛰️ Emerging Threat → Draft Detection Rule</h2>
+    <div class="sub2">Describe a new fraud scenario your team has spotted (a scam call script, a new app-based fraud, a pattern from a fresh case). The agent drafts a candidate rule in the same style as the existing engine — <b>a human reviews and tests it before it goes live</b>, this does not auto-deploy.</div>
+    <textarea id="scenarioInput" placeholder="e.g. Fraudsters are calling customers claiming to be from the bank's fraud department, convincing them to move money to a 'safe account' they control, then immediately cashing out at an agent in a different region within the hour."></textarea>
+    <button class="draft-btn" id="draftBtn" onclick="draftRule()">
+      <span class="spinner" id="draftSpinner"></span>
+      <span id="draftLabel">Analyze scenario &amp; draft rule</span>
+    </button>
+    <div class="rule-output" id="ruleOutput"></div>
+  </div>
+
+  <footer>JICHO — "the eye" · rules-based detection + fraud hunting + AI investigation &amp; rule-drafting agents · v0.4 prototype</footer>
+</div>
+
+<script>
+const ALERTS = [{"rule_id": "R1", "rule_name": "SIM-Swap Cash-Out", "account_id": "ACC2001", "transaction_id": "TXN000152", "timestamp": "2026-08-20 18:00:00", "severity": "CRITICAL", "score": 95, "description": "Withdrawal of 1,800,000 occurred 0 days 02:00:00 after a SIM/device change on this account.", "evidence": {"sim_swap_time": "2026-08-20 16:00:00", "withdrawal_amount": 1800000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC1501", "distance": 0.678}, {"account_id": "ACC2005", "distance": 0.697}, {"account_id": "ACC3002", "distance": 0.747}]}]}, {"rule_id": "R8", "rule_name": "Dormant Account Sudden Inflow + Sweep", "account_id": "ACC4001", "transaction_id": "TXN000176", "timestamp": "2026-08-23 04:00:00", "severity": "CRITICAL", "score": 93, "description": "Account with no prior activity received 3,200,000 then swept out 94% of it within 6.0h \u2014 matches the mule-account pattern seen on EFT rails without payee-name verification.", "evidence": {"inflow_amount": 3200000.0, "outflow_ratio": 0.9375}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 2 other account(s) within 3 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "ACC4002", "hop": 1}, {"account_id": "VICTIM01", "hop": 1}]}]}, {"rule_id": "R7", "rule_name": "Rapid Cross-Account Layering", "account_id": "ACC2006", "transaction_id": "TXN000173", "timestamp": "2026-08-22 18:00:00", "severity": "CRITICAL", "score": 92, "description": "Funds moved through 3 accounts within 45.0 minutes \u2014 pattern consistent with layering to exhaust per-institution monitoring thresholds.", "evidence": {"hop_count": 3, "path": ["ACC2006", "ACC2007", "ACC2008"]}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 3 other account(s) within 5 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "ACC2007", "hop": 1}, {"account_id": "ACC2008", "hop": 2}, {"account_id": "ACC2009", "hop": 3}]}]}, {"rule_id": "R13", "rule_name": "Cross-Border Card Velocity", "account_id": "CARD9001", "transaction_id": "TXN000202", "timestamp": "2026-08-24 11:00:00", "severity": "CRITICAL", "score": 91, "description": "Same card used in TZ then KE within 0 days 01:00:00 \u2014 too fast for legitimate travel, consistent with a cloned card used in two locations.", "evidence": {"country_a": "TZ", "country_b": "KE", "gap_seconds": 3600.0}, "suggested_hunts": [{"hunt_type": "card_id_activity", "rationale": "This card has 2 transaction(s) touching 2 account(s) in the dataset \u2014 pull the full card history before deciding this is an isolated incident.", "results": ["ACC9001", "ACC9002"]}]}, {"rule_id": "R4", "rule_name": "Money-Mule Fan-In / Sweep-Out", "account_id": "ACC2004", "transaction_id": "TXN000162", "timestamp": "2026-08-21 22:00:00", "severity": "CRITICAL", "score": 90, "description": "Received funds from 6 distinct senders then moved out 92% of inflows within 6.0h \u2014 classic mule pattern.", "evidence": {"distinct_senders": 6, "outflow_ratio": 0.9166666666666666}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 7 other account(s) within 2 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "MULE_NEXT", "hop": 1}, {"account_id": "SENDER0", "hop": 1}, {"account_id": "SENDER1", "hop": 1}, {"account_id": "SENDER2", "hop": 1}, {"account_id": "SENDER3", "hop": 1}, {"account_id": "SENDER4", "hop": 1}, {"account_id": "SENDER5", "hop": 1}]}, {"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC4001", "distance": 1.074}, {"account_id": "ACC1003", "distance": 1.39}, {"account_id": "ACC1017", "distance": 1.5}]}]}, {"rule_id": "R16", "rule_name": "BEC-Pattern Payment Redirection", "account_id": "ACC1301", "transaction_id": "TXN000213", "timestamp": "2026-08-25 03:00:00", "severity": "CRITICAL", "score": 89, "description": "A high-value transfer of 4,500,000 followed a beneficiary detail change by 0 days 02:00:00 \u2014 matches the standard BEC payment-redirection signature: an urgent payment sent to a newly-changed beneficiary.", "evidence": {"beneficiary_change_time": "2026-08-25 01:00:00", "transfer_amount": 4500000.0}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 1 other account(s) within 3 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "NEWBENEFICIARY", "hop": 1}]}, {"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC2008", "distance": 0.504}, {"account_id": "ACC2007", "distance": 0.507}, {"account_id": "ACC2006", "distance": 0.51}]}]}, {"rule_id": "R17", "rule_name": "Credential-Phishing Account Takeover", "account_id": "ACC1401", "transaction_id": "TXN000215", "timestamp": "2026-08-25 06:15:00", "severity": "CRITICAL", "score": 88, "description": "A transaction of 900,000 occurred 0 days 00:15:00 after a flagged suspicious login (new device/location/impossible-travel login) \u2014 consistent with account takeover following credential phishing, independent of which channel (SIM-swap, malware, or phishing) delivered the credentials.", "evidence": {"suspicious_login_time": "2026-08-25 06:00:00", "amount": 900000.0}, "suggested_hunts": [{"hunt_type": "account_network", "rationale": "This account connects to 1 other account(s) within 3 hops via counterparty links \u2014 check whether they form a ring before closing this alert.", "results": [{"account_id": "ATTACKER_ACCT", "hop": 1}]}]}, {"rule_id": "R18", "rule_name": "Rapid Multi-Terminal ATM Withdrawal", "account_id": "ACC1501", "transaction_id": "TXN000217", "timestamp": "2026-08-25 11:08:00", "severity": "HIGH", "score": 84, "description": "Withdrawals at two physically distinct ATM terminals (ATM_CITY_A then ATM_CITY_B) within 0 days 00:08:00 \u2014 too fast for legitimate travel between machines, consistent with a cloned card or payment-switch routing abuse.", "evidence": {"terminal_a": "ATM_CITY_A", "terminal_b": "ATM_CITY_B", "gap_seconds": 480.0}, "suggested_hunts": []}, {"rule_id": "R10", "rule_name": "Loan-App Disbursement Rapid Cash-Out", "account_id": "ACC6001", "transaction_id": "TXN000187", "timestamp": "2026-08-23 19:00:00", "severity": "HIGH", "score": 82, "description": "Loan disbursement of 900,000 was 98% cashed out within 2.0h of disbursement \u2014 pattern flagged by Interpol as linked to fraudulent mobile loan-app rings.", "evidence": {"disbursement_amount": 900000.0, "cashout_ratio": 0.9777777777777777}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC1003", "distance": 0.907}, {"account_id": "ACC1032", "distance": 0.926}, {"account_id": "ACC1023", "distance": 0.951}]}]}, {"rule_id": "R15", "rule_name": "Offline Authorization Abuse", "account_id": "ACC1201", "transaction_id": "TXN000208", "timestamp": "2026-08-24 20:00:00", "severity": "HIGH", "score": 81, "description": "4 offline-authorized transactions totaling 1,800,000 within 4.0h \u2014 offline mode skips real-time balance/velocity checks, a known vector for excess-spend fraud once a terminal or network segment goes offline.", "evidence": {"offline_txn_count": 4, "total_amount": 1800000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC8001", "distance": 0.0}, {"account_id": "ACC1100", "distance": 0.5}, {"account_id": "ACC1101", "distance": 0.5}]}]}, {"rule_id": "R6", "rule_name": "Off-Hours Staff-Initiated Transaction", "account_id": "ACC2005", "transaction_id": "TXN000172", "timestamp": "2026-08-23 01:30:00", "severity": "HIGH", "score": 80, "description": "Staff-initiated transaction of 3,500,000 at 01:30, outside normal business hours \u2014 possible insider collusion.", "evidence": {"hour": 1, "amount": 3500000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC2001", "distance": 0.697}, {"account_id": "ACC3002", "distance": 0.771}, {"account_id": "ACC3003", "distance": 0.829}]}]}, {"rule_id": "R12", "rule_name": "Card Testing Pattern", "account_id": "CARD8001", "transaction_id": "TXN000197", "timestamp": "2026-08-24 05:00:00", "severity": "HIGH", "score": 79, "description": "4 small POS transactions (\u226420,000) on this card within 20.0 minutes \u2014 pattern consistent with a stolen card being tested for validity before a larger purchase.", "evidence": {"txn_count": 4}, "suggested_hunts": [{"hunt_type": "card_id_activity", "rationale": "This card has 4 transaction(s) touching 1 account(s) in the dataset \u2014 pull the full card history before deciding this is an isolated incident.", "results": ["ACC8001"]}]}, {"rule_id": "R9", "rule_name": "Synchronized Multi-Account Withdrawal Spike", "account_id": "PORTFOLIO", "transaction_id": "TXN000178", "timestamp": "2026-08-23 14:00:00", "severity": "HIGH", "score": 78, "description": "9 unrelated accounts attempted withdrawals within 30.0 minutes \u2014 consistent with a panic run following an investment/forex scheme collapse or public scam alert.", "evidence": {"distinct_accounts": 9, "window_start": "2026-08-23 14:00:00"}, "suggested_hunts": []}, {"rule_id": "R11", "rule_name": "EMV Fallback Abuse", "account_id": "MERCH900", "transaction_id": "TXN000196", "timestamp": "2026-08-24 00:35:00", "severity": "HIGH", "score": 76, "description": "Merchant's magstripe-fallback rate is 75.0% of 8 card-present transactions \u2014 above Visa's 1.5% excessive-fallback threshold (VAMP, 2026). Consistent with intentionally damaged chips forcing fallback to cloned magstripe cards.", "evidence": {"fallback_ratio": 0.75, "sample_size": 8}, "suggested_hunts": [{"hunt_type": "merchant_id_activity", "rationale": "This merchant has 8 transaction(s) touching 8 account(s) in the dataset \u2014 pull the full merchant history before deciding this is an isolated incident.", "results": ["ACC7000", "ACC7001", "ACC7002", "ACC7003", "ACC7004", "ACC7005", "ACC7006", "ACC7007"]}]}, {"rule_id": "R2", "rule_name": "Velocity Spike", "account_id": "ACC2002", "transaction_id": "TXN000153", "timestamp": "2026-08-21 02:00:00", "severity": "HIGH", "score": 75, "description": "5 outbound transactions within 30.0 minutes starting 2026-08-21 02:00:00.", "evidence": {"txn_count_in_window": 5}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC1001", "distance": 0.542}, {"account_id": "ACC1038", "distance": 0.604}, {"account_id": "ACC1501", "distance": 0.641}]}]}, {"rule_id": "R5", "rule_name": "Agent Till Cash-Out Anomaly", "account_id": "AGENT500", "transaction_id": "TXN000171", "timestamp": "2026-08-20 21:20:00", "severity": "HIGH", "score": 70, "description": "Agent till shows cash-out 14.0x cash-in volume \u2014 consistent with unrecorded OTC transactions bypassing customer wallets.", "evidence": {"cash_out_total": 1400000.0, "cash_in_total": 100000.0}, "suggested_hunts": [{"hunt_type": "agent_till_activity", "rationale": "3 distinct accounts transacted through this agent till \u2014 pull the full till history, not just this one flagged transaction, before deciding whether the agent itself is compromised or complicit.", "results": ["ACC3001", "ACC3002", "ACC3003"]}]}, {"rule_id": "R14", "rule_name": "Merchant Refund Anomaly", "account_id": "MERCH700", "transaction_id": "TXN000207", "timestamp": "2026-08-24 16:05:00", "severity": "MEDIUM", "score": 64, "description": "Refunds are 63% of this merchant's sales volume \u2014 consistent with return fraud or merchant collusion rather than genuine returns.", "evidence": {"refund_ratio": 0.6333333333333333, "sales_total": 600000.0, "refund_total": 380000.0}, "suggested_hunts": [{"hunt_type": "merchant_id_activity", "rationale": "This merchant has 5 transaction(s) touching 3 account(s) in the dataset \u2014 pull the full merchant history before deciding this is an isolated incident.", "results": ["ACC1100", "ACC1101", "ACC1102"]}]}, {"rule_id": "R3", "rule_name": "Structuring / Smurfing", "account_id": "ACC2003", "transaction_id": "TXN000158", "timestamp": "2026-08-21 12:00:00", "severity": "MEDIUM", "score": 60, "description": "4 deposits just below the 10,000,000 reporting threshold within 24.0h.", "evidence": {"deposit_count": 4, "threshold": 10000000.0}, "suggested_hunts": [{"hunt_type": "similar_accounts", "rationale": "Accounts with closely matching transaction behavior \u2014 worth checking whether this is a repeated pattern from the same operator rather than an isolated incident.", "results": [{"account_id": "ACC8001", "distance": 1.0}, {"account_id": "ACC1201", "distance": 1.0}, {"account_id": "ACC1019", "distance": 1.107}]}]}];
+
+const TRANSACTIONS = [{"transaction_id":"TXN000001","account_id":"ACC1040","counterparty_id":null,"transaction_type":"transfer_out","amount":77000.0,"timestamp":"2026-08-20 16:41:16","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000002","account_id":"ACC1047","counterparty_id":null,"transaction_type":"deposit","amount":179000.0,"timestamp":"2026-08-20 15:50:22","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000003","account_id":"ACC1001","counterparty_id":null,"transaction_type":"withdrawal","amount":154000.0,"timestamp":"2026-08-20 14:59:41","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000004","account_id":"ACC1035","counterparty_id":null,"transaction_type":"cash_in","amount":70000.0,"timestamp":"2026-08-21 01:05:18","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000005","account_id":"ACC1000","counterparty_id":null,"transaction_type":"withdrawal","amount":211000.0,"timestamp":"2026-08-23 06:50:43","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000006","account_id":"ACC1017","counterparty_id":null,"transaction_type":"transfer_out","amount":35000.0,"timestamp":"2026-08-20 20:55:33","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000007","account_id":"ACC1006","counterparty_id":null,"transaction_type":"transfer_out","amount":183000.0,"timestamp":"2026-08-21 16:27:43","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000008","account_id":"ACC1046","counterparty_id":null,"transaction_type":"deposit","amount":292000.0,"timestamp":"2026-08-22 02:06:17","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000009","account_id":"ACC1005","counterparty_id":null,"transaction_type":"transfer_out","amount":175000.0,"timestamp":"2026-08-22 10:59:45","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000010","account_id":"ACC1002","counterparty_id":null,"transaction_type":"transfer_out","amount":296000.0,"timestamp":"2026-08-22 21:28:52","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000011","account_id":"ACC1006","counterparty_id":null,"transaction_type":"cash_in","amount":193000.0,"timestamp":"2026-08-21 18:29:31","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000012","account_id":"ACC1010","counterparty_id":null,"transaction_type":"withdrawal","amount":203000.0,"timestamp":"2026-08-21 17:32:14","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000013","account_id":"ACC1038","counterparty_id":null,"transaction_type":"withdrawal","amount":53000.0,"timestamp":"2026-08-22 18:57:28","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000014","account_id":"ACC1017","counterparty_id":null,"transaction_type":"withdrawal","amount":207000.0,"timestamp":"2026-08-24 04:59:39","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000015","account_id":"ACC1014","counterparty_id":null,"transaction_type":"transfer_out","amount":123000.0,"timestamp":"2026-08-23 12:53:34","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000016","account_id":"ACC1013","counterparty_id":null,"transaction_type":"transfer_out","amount":68000.0,"timestamp":"2026-08-23 21:39:39","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000017","account_id":"ACC1025","counterparty_id":null,"transaction_type":"cash_in","amount":47000.0,"timestamp":"2026-08-23 18:55:46","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000018","account_id":"ACC1015","counterparty_id":null,"transaction_type":"transfer_out","amount":225000.0,"timestamp":"2026-08-23 05:31:08","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000019","account_id":"ACC1037","counterparty_id":null,"transaction_type":"withdrawal","amount":299000.0,"timestamp":"2026-08-21 20:20:32","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000020","account_id":"ACC1032","counterparty_id":null,"transaction_type":"deposit","amount":259000.0,"timestamp":"2026-08-22 05:22:39","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000021","account_id":"ACC1040","counterparty_id":null,"transaction_type":"cash_in","amount":181000.0,"timestamp":"2026-08-20 21:21:29","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000022","account_id":"ACC1024","counterparty_id":null,"transaction_type":"cash_in","amount":161000.0,"timestamp":"2026-08-22 15:12:19","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000023","account_id":"ACC1043","counterparty_id":null,"transaction_type":"transfer_out","amount":232000.0,"timestamp":"2026-08-23 03:11:21","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000024","account_id":"ACC1007","counterparty_id":null,"transaction_type":"withdrawal","amount":139000.0,"timestamp":"2026-08-21 10:10:33","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000025","account_id":"ACC1032","counterparty_id":null,"transaction_type":"deposit","amount":262000.0,"timestamp":"2026-08-23 07:08:54","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000026","account_id":"ACC1040","counterparty_id":null,"transaction_type":"withdrawal","amount":50000.0,"timestamp":"2026-08-22 06:44:08","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000027","account_id":"ACC1034","counterparty_id":null,"transaction_type":"deposit","amount":182000.0,"timestamp":"2026-08-24 01:32:09","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000028","account_id":"ACC1001","counterparty_id":null,"transaction_type":"transfer_out","amount":264000.0,"timestamp":"2026-08-20 16:44:21","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000029","account_id":"ACC1015","counterparty_id":null,"transaction_type":"deposit","amount":30000.0,"timestamp":"2026-08-20 11:33:38","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000030","account_id":"ACC1004","counterparty_id":null,"transaction_type":"withdrawal","amount":43000.0,"timestamp":"2026-08-24 03:53:11","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000031","account_id":"ACC1035","counterparty_id":null,"transaction_type":"cash_in","amount":289000.0,"timestamp":"2026-08-20 21:51:07","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000032","account_id":"ACC1045","counterparty_id":null,"transaction_type":"transfer_out","amount":134000.0,"timestamp":"2026-08-21 11:55:29","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000033","account_id":"ACC1007","counterparty_id":null,"transaction_type":"deposit","amount":105000.0,"timestamp":"2026-08-21 05:47:56","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000034","account_id":"ACC1037","counterparty_id":null,"transaction_type":"deposit","amount":214000.0,"timestamp":"2026-08-21 03:08:27","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000035","account_id":"ACC1014","counterparty_id":null,"transaction_type":"deposit","amount":259000.0,"timestamp":"2026-08-20 12:28:13","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000036","account_id":"ACC1032","counterparty_id":null,"transaction_type":"cash_in","amount":68000.0,"timestamp":"2026-08-21 04:50:54","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000037","account_id":"ACC1046","counterparty_id":null,"transaction_type":"cash_in","amount":77000.0,"timestamp":"2026-08-23 23:48:33","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000038","account_id":"ACC1026","counterparty_id":null,"transaction_type":"deposit","amount":199000.0,"timestamp":"2026-08-21 00:16:45","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000039","account_id":"ACC1027","counterparty_id":null,"transaction_type":"deposit","amount":204000.0,"timestamp":"2026-08-21 21:27:56","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000040","account_id":"ACC1003","counterparty_id":null,"transaction_type":"transfer_out","amount":241000.0,"timestamp":"2026-08-21 20:39:05","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000041","account_id":"ACC1015","counterparty_id":null,"transaction_type":"cash_in","amount":46000.0,"timestamp":"2026-08-21 00:23:33","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000042","account_id":"ACC1017","counterparty_id":null,"transaction_type":"deposit","amount":136000.0,"timestamp":"2026-08-22 02:24:44","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000043","account_id":"ACC1003","counterparty_id":null,"transaction_type":"deposit","amount":291000.0,"timestamp":"2026-08-22 20:36:21","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000044","account_id":"ACC1010","counterparty_id":null,"transaction_type":"cash_in","amount":68000.0,"timestamp":"2026-08-21 21:00:56","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000045","account_id":"ACC1003","counterparty_id":null,"transaction_type":"deposit","amount":296000.0,"timestamp":"2026-08-20 21:48:18","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000046","account_id":"ACC1050","counterparty_id":null,"transaction_type":"transfer_out","amount":130000.0,"timestamp":"2026-08-23 09:22:20","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000047","account_id":"ACC1009","counterparty_id":null,"transaction_type":"withdrawal","amount":291000.0,"timestamp":"2026-08-21 00:13:48","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000048","account_id":"ACC1047","counterparty_id":null,"transaction_type":"deposit","amount":177000.0,"timestamp":"2026-08-21 12:06:21","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000049","account_id":"ACC1003","counterparty_id":null,"transaction_type":"deposit","amount":256000.0,"timestamp":"2026-08-24 02:14:05","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000050","account_id":"ACC1038","counterparty_id":null,"transaction_type":"withdrawal","amount":124000.0,"timestamp":"2026-08-20 12:31:27","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000051","account_id":"ACC1037","counterparty_id":null,"transaction_type":"deposit","amount":129000.0,"timestamp":"2026-08-22 15:04:25","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000052","account_id":"ACC1016","counterparty_id":null,"transaction_type":"transfer_out","amount":75000.0,"timestamp":"2026-08-21 01:36:31","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000053","account_id":"ACC1008","counterparty_id":null,"transaction_type":"transfer_out","amount":140000.0,"timestamp":"2026-08-22 22:28:56","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000054","account_id":"ACC1000","counterparty_id":null,"transaction_type":"deposit","amount":27000.0,"timestamp":"2026-08-22 01:59:43","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000055","account_id":"ACC1032","counterparty_id":null,"transaction_type":"transfer_out","amount":265000.0,"timestamp":"2026-08-21 07:27:33","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000056","account_id":"ACC1023","counterparty_id":null,"transaction_type":"cash_in","amount":251000.0,"timestamp":"2026-08-21 09:21:31","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000057","account_id":"ACC1039","counterparty_id":null,"transaction_type":"deposit","amount":202000.0,"timestamp":"2026-08-24 04:26:59","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000058","account_id":"ACC1042","counterparty_id":null,"transaction_type":"withdrawal","amount":83000.0,"timestamp":"2026-08-20 15:56:39","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000059","account_id":"ACC1047","counterparty_id":null,"transaction_type":"transfer_out","amount":88000.0,"timestamp":"2026-08-22 11:06:34","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000060","account_id":"ACC1045","counterparty_id":null,"transaction_type":"transfer_out","amount":154000.0,"timestamp":"2026-08-21 14:54:59","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000061","account_id":"ACC1003","counterparty_id":null,"transaction_type":"cash_in","amount":250000.0,"timestamp":"2026-08-20 14:51:38","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000062","account_id":"ACC1000","counterparty_id":null,"transaction_type":"withdrawal","amount":193000.0,"timestamp":"2026-08-21 14:01:17","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000063","account_id":"ACC1010","counterparty_id":null,"transaction_type":"cash_in","amount":170000.0,"timestamp":"2026-08-23 05:09:29","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000064","account_id":"ACC1004","counterparty_id":null,"transaction_type":"withdrawal","amount":166000.0,"timestamp":"2026-08-24 00:43:29","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000065","account_id":"ACC1037","counterparty_id":null,"transaction_type":"cash_in","amount":43000.0,"timestamp":"2026-08-22 11:02:32","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000066","account_id":"ACC1023","counterparty_id":null,"transaction_type":"deposit","amount":270000.0,"timestamp":"2026-08-23 20:18:08","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000067","account_id":"ACC1043","counterparty_id":null,"transaction_type":"deposit","amount":109000.0,"timestamp":"2026-08-21 05:57:17","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000068","account_id":"ACC1039","counterparty_id":null,"transaction_type":"withdrawal","amount":260000.0,"timestamp":"2026-08-23 05:56:59","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000069","account_id":"ACC1026","counterparty_id":null,"transaction_type":"transfer_out","amount":236000.0,"timestamp":"2026-08-20 08:22:46","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000070","account_id":"ACC1042","counterparty_id":null,"transaction_type":"withdrawal","amount":84000.0,"timestamp":"2026-08-23 16:57:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000071","account_id":"ACC1024","counterparty_id":null,"transaction_type":"cash_in","amount":71000.0,"timestamp":"2026-08-23 17:43:40","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000072","account_id":"ACC1022","counterparty_id":null,"transaction_type":"withdrawal","amount":71000.0,"timestamp":"2026-08-21 11:17:53","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000073","account_id":"ACC1025","counterparty_id":null,"transaction_type":"deposit","amount":290000.0,"timestamp":"2026-08-21 13:30:47","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000074","account_id":"ACC1022","counterparty_id":null,"transaction_type":"cash_in","amount":205000.0,"timestamp":"2026-08-22 19:34:56","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000075","account_id":"ACC1001","counterparty_id":null,"transaction_type":"transfer_out","amount":58000.0,"timestamp":"2026-08-20 17:04:22","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000076","account_id":"ACC1002","counterparty_id":null,"transaction_type":"cash_in","amount":107000.0,"timestamp":"2026-08-20 16:24:23","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000077","account_id":"ACC1027","counterparty_id":null,"transaction_type":"deposit","amount":119000.0,"timestamp":"2026-08-22 16:11:45","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000078","account_id":"ACC1016","counterparty_id":null,"transaction_type":"cash_in","amount":5000.0,"timestamp":"2026-08-20 10:15:39","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000079","account_id":"ACC1023","counterparty_id":null,"transaction_type":"transfer_out","amount":189000.0,"timestamp":"2026-08-21 23:24:16","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000080","account_id":"ACC1046","counterparty_id":null,"transaction_type":"transfer_out","amount":202000.0,"timestamp":"2026-08-23 20:24:16","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000081","account_id":"ACC1025","counterparty_id":null,"transaction_type":"withdrawal","amount":62000.0,"timestamp":"2026-08-23 00:55:55","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000082","account_id":"ACC1043","counterparty_id":null,"transaction_type":"withdrawal","amount":187000.0,"timestamp":"2026-08-23 05:49:15","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000083","account_id":"ACC1025","counterparty_id":null,"transaction_type":"deposit","amount":95000.0,"timestamp":"2026-08-22 10:36:07","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000084","account_id":"ACC1027","counterparty_id":null,"transaction_type":"transfer_out","amount":142000.0,"timestamp":"2026-08-23 09:25:58","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000085","account_id":"ACC1043","counterparty_id":null,"transaction_type":"cash_in","amount":239000.0,"timestamp":"2026-08-21 02:30:55","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000086","account_id":"ACC1042","counterparty_id":null,"transaction_type":"transfer_out","amount":33000.0,"timestamp":"2026-08-20 14:08:25","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000087","account_id":"ACC1043","counterparty_id":null,"transaction_type":"withdrawal","amount":48000.0,"timestamp":"2026-08-21 11:48:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000088","account_id":"ACC1015","counterparty_id":null,"transaction_type":"deposit","amount":139000.0,"timestamp":"2026-08-24 04:27:28","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000089","account_id":"ACC1045","counterparty_id":null,"transaction_type":"cash_in","amount":123000.0,"timestamp":"2026-08-23 00:51:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000090","account_id":"ACC1041","counterparty_id":null,"transaction_type":"deposit","amount":235000.0,"timestamp":"2026-08-23 00:00:42","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000091","account_id":"ACC1011","counterparty_id":null,"transaction_type":"cash_in","amount":20000.0,"timestamp":"2026-08-23 11:11:40","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000092","account_id":"ACC1007","counterparty_id":null,"transaction_type":"cash_in","amount":202000.0,"timestamp":"2026-08-22 01:49:13","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000093","account_id":"ACC1048","counterparty_id":null,"transaction_type":"cash_in","amount":250000.0,"timestamp":"2026-08-23 19:34:36","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000094","account_id":"ACC1010","counterparty_id":null,"transaction_type":"cash_in","amount":138000.0,"timestamp":"2026-08-23 05:23:27","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000095","account_id":"ACC1040","counterparty_id":null,"transaction_type":"cash_in","amount":190000.0,"timestamp":"2026-08-21 08:37:18","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000096","account_id":"ACC1028","counterparty_id":null,"transaction_type":"transfer_out","amount":74000.0,"timestamp":"2026-08-20 13:26:18","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000097","account_id":"ACC1020","counterparty_id":null,"transaction_type":"deposit","amount":46000.0,"timestamp":"2026-08-23 19:43:50","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000098","account_id":"ACC1024","counterparty_id":null,"transaction_type":"withdrawal","amount":24000.0,"timestamp":"2026-08-23 00:37:09","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000099","account_id":"ACC1021","counterparty_id":null,"transaction_type":"cash_in","amount":23000.0,"timestamp":"2026-08-22 10:05:26","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000100","account_id":"ACC1024","counterparty_id":null,"transaction_type":"deposit","amount":258000.0,"timestamp":"2026-08-23 20:51:52","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000101","account_id":"ACC1030","counterparty_id":null,"transaction_type":"transfer_out","amount":93000.0,"timestamp":"2026-08-20 06:33:57","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000102","account_id":"ACC1026","counterparty_id":null,"transaction_type":"withdrawal","amount":149000.0,"timestamp":"2026-08-22 09:40:09","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000103","account_id":"ACC1027","counterparty_id":null,"transaction_type":"cash_in","amount":104000.0,"timestamp":"2026-08-22 04:37:17","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000104","account_id":"ACC1046","counterparty_id":null,"transaction_type":"cash_in","amount":276000.0,"timestamp":"2026-08-20 21:50:39","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000105","account_id":"ACC1025","counterparty_id":null,"transaction_type":"deposit","amount":30000.0,"timestamp":"2026-08-22 14:49:18","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000106","account_id":"ACC1008","counterparty_id":null,"transaction_type":"withdrawal","amount":20000.0,"timestamp":"2026-08-23 17:13:03","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000107","account_id":"ACC1020","counterparty_id":null,"transaction_type":"transfer_out","amount":105000.0,"timestamp":"2026-08-21 02:19:09","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000108","account_id":"ACC1017","counterparty_id":null,"transaction_type":"cash_in","amount":79000.0,"timestamp":"2026-08-23 06:11:34","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000109","account_id":"ACC1030","counterparty_id":null,"transaction_type":"deposit","amount":300000.0,"timestamp":"2026-08-20 07:51:38","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000110","account_id":"ACC1014","counterparty_id":null,"transaction_type":"deposit","amount":227000.0,"timestamp":"2026-08-22 20:24:49","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000111","account_id":"ACC1012","counterparty_id":null,"transaction_type":"withdrawal","amount":75000.0,"timestamp":"2026-08-23 14:33:57","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000112","account_id":"ACC1042","counterparty_id":null,"transaction_type":"withdrawal","amount":142000.0,"timestamp":"2026-08-20 16:58:52","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000113","account_id":"ACC1049","counterparty_id":null,"transaction_type":"deposit","amount":234000.0,"timestamp":"2026-08-21 17:24:50","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000114","account_id":"ACC1019","counterparty_id":null,"transaction_type":"deposit","amount":279000.0,"timestamp":"2026-08-20 16:22:38","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000115","account_id":"ACC1025","counterparty_id":null,"transaction_type":"withdrawal","amount":27000.0,"timestamp":"2026-08-24 00:22:52","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000116","account_id":"ACC1006","counterparty_id":null,"transaction_type":"transfer_out","amount":256000.0,"timestamp":"2026-08-23 00:55:49","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000117","account_id":"ACC1050","counterparty_id":null,"transaction_type":"deposit","amount":107000.0,"timestamp":"2026-08-24 04:26:56","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000118","account_id":"ACC1042","counterparty_id":null,"transaction_type":"transfer_out","amount":9000.0,"timestamp":"2026-08-21 17:34:29","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000119","account_id":"ACC1031","counterparty_id":null,"transaction_type":"transfer_out","amount":192000.0,"timestamp":"2026-08-20 16:07:54","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000120","account_id":"ACC1045","counterparty_id":null,"transaction_type":"withdrawal","amount":221000.0,"timestamp":"2026-08-20 20:41:13","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000121","account_id":"ACC1039","counterparty_id":null,"transaction_type":"cash_in","amount":142000.0,"timestamp":"2026-08-23 11:35:13","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000122","account_id":"ACC1020","counterparty_id":null,"transaction_type":"deposit","amount":87000.0,"timestamp":"2026-08-23 15:45:52","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000123","account_id":"ACC1015","counterparty_id":null,"transaction_type":"cash_in","amount":104000.0,"timestamp":"2026-08-23 06:02:44","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000124","account_id":"ACC1020","counterparty_id":null,"transaction_type":"withdrawal","amount":110000.0,"timestamp":"2026-08-20 23:27:23","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000125","account_id":"ACC1021","counterparty_id":null,"transaction_type":"transfer_out","amount":169000.0,"timestamp":"2026-08-21 08:50:49","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000126","account_id":"ACC1005","counterparty_id":null,"transaction_type":"cash_in","amount":149000.0,"timestamp":"2026-08-21 05:10:12","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000127","account_id":"ACC1044","counterparty_id":null,"transaction_type":"cash_in","amount":137000.0,"timestamp":"2026-08-22 03:42:17","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000128","account_id":"ACC1005","counterparty_id":null,"transaction_type":"cash_in","amount":209000.0,"timestamp":"2026-08-21 10:14:47","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000129","account_id":"ACC1042","counterparty_id":null,"transaction_type":"cash_in","amount":168000.0,"timestamp":"2026-08-22 13:49:45","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000130","account_id":"ACC1027","counterparty_id":null,"transaction_type":"transfer_out","amount":109000.0,"timestamp":"2026-08-24 05:40:35","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000131","account_id":"ACC1017","counterparty_id":null,"transaction_type":"withdrawal","amount":41000.0,"timestamp":"2026-08-21 11:26:08","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000132","account_id":"ACC1020","counterparty_id":null,"transaction_type":"withdrawal","amount":62000.0,"timestamp":"2026-08-20 17:28:38","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000133","account_id":"ACC1017","counterparty_id":null,"transaction_type":"transfer_out","amount":294000.0,"timestamp":"2026-08-23 03:33:36","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000134","account_id":"ACC1018","counterparty_id":null,"transaction_type":"withdrawal","amount":94000.0,"timestamp":"2026-08-21 03:50:18","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000135","account_id":"ACC1017","counterparty_id":null,"transaction_type":"deposit","amount":168000.0,"timestamp":"2026-08-20 10:22:10","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000136","account_id":"ACC1040","counterparty_id":null,"transaction_type":"cash_in","amount":35000.0,"timestamp":"2026-08-23 17:22:20","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000137","account_id":"ACC1036","counterparty_id":null,"transaction_type":"cash_in","amount":135000.0,"timestamp":"2026-08-21 09:17:47","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000138","account_id":"ACC1003","counterparty_id":null,"transaction_type":"cash_in","amount":39000.0,"timestamp":"2026-08-21 06:14:16","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000139","account_id":"ACC1025","counterparty_id":null,"transaction_type":"deposit","amount":50000.0,"timestamp":"2026-08-22 05:12:27","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000140","account_id":"ACC1005","counterparty_id":null,"transaction_type":"deposit","amount":170000.0,"timestamp":"2026-08-24 05:24:58","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000141","account_id":"ACC1038","counterparty_id":null,"transaction_type":"withdrawal","amount":234000.0,"timestamp":"2026-08-22 15:13:41","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000142","account_id":"ACC1028","counterparty_id":null,"transaction_type":"transfer_out","amount":259000.0,"timestamp":"2026-08-23 21:12:59","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000143","account_id":"ACC1019","counterparty_id":null,"transaction_type":"deposit","amount":185000.0,"timestamp":"2026-08-22 12:35:18","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000144","account_id":"ACC1048","counterparty_id":null,"transaction_type":"withdrawal","amount":83000.0,"timestamp":"2026-08-21 01:56:51","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000145","account_id":"ACC1010","counterparty_id":null,"transaction_type":"deposit","amount":51000.0,"timestamp":"2026-08-21 05:01:37","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000146","account_id":"ACC1028","counterparty_id":null,"transaction_type":"cash_in","amount":91000.0,"timestamp":"2026-08-23 00:10:46","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000147","account_id":"ACC1018","counterparty_id":null,"transaction_type":"cash_in","amount":26000.0,"timestamp":"2026-08-23 01:52:03","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000148","account_id":"ACC1016","counterparty_id":null,"transaction_type":"withdrawal","amount":130000.0,"timestamp":"2026-08-23 09:37:53","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000149","account_id":"ACC1041","counterparty_id":null,"transaction_type":"transfer_out","amount":249000.0,"timestamp":"2026-08-20 20:18:10","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000150","account_id":"ACC1003","counterparty_id":null,"transaction_type":"transfer_out","amount":181000.0,"timestamp":"2026-08-20 21:55:42","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000151","account_id":"ACC2001","counterparty_id":null,"transaction_type":"sim_swap","amount":0.0,"timestamp":"2026-08-20 16:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000152","account_id":"ACC2001","counterparty_id":null,"transaction_type":"withdrawal","amount":1800000.0,"timestamp":"2026-08-20 18:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000153","account_id":"ACC2002","counterparty_id":null,"transaction_type":"withdrawal","amount":150000.0,"timestamp":"2026-08-21 02:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000154","account_id":"ACC2002","counterparty_id":null,"transaction_type":"withdrawal","amount":150000.0,"timestamp":"2026-08-21 02:05:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000155","account_id":"ACC2002","counterparty_id":null,"transaction_type":"withdrawal","amount":150000.0,"timestamp":"2026-08-21 02:10:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000156","account_id":"ACC2002","counterparty_id":null,"transaction_type":"withdrawal","amount":150000.0,"timestamp":"2026-08-21 02:15:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000157","account_id":"ACC2002","counterparty_id":null,"transaction_type":"withdrawal","amount":150000.0,"timestamp":"2026-08-21 02:20:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000158","account_id":"ACC2003","counterparty_id":null,"transaction_type":"deposit","amount":9200000.0,"timestamp":"2026-08-21 12:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000159","account_id":"ACC2003","counterparty_id":null,"transaction_type":"deposit","amount":9100000.0,"timestamp":"2026-08-21 15:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000160","account_id":"ACC2003","counterparty_id":null,"transaction_type":"deposit","amount":9000000.0,"timestamp":"2026-08-21 18:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000161","account_id":"ACC2003","counterparty_id":null,"transaction_type":"deposit","amount":8900000.0,"timestamp":"2026-08-21 21:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000162","account_id":"ACC2004","counterparty_id":"SENDER0","transaction_type":"transfer_in","amount":400000.0,"timestamp":"2026-08-21 22:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000163","account_id":"ACC2004","counterparty_id":"SENDER1","transaction_type":"transfer_in","amount":400000.0,"timestamp":"2026-08-21 22:20:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000164","account_id":"ACC2004","counterparty_id":"SENDER2","transaction_type":"transfer_in","amount":400000.0,"timestamp":"2026-08-21 22:40:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000165","account_id":"ACC2004","counterparty_id":"SENDER3","transaction_type":"transfer_in","amount":400000.0,"timestamp":"2026-08-21 23:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000166","account_id":"ACC2004","counterparty_id":"SENDER4","transaction_type":"transfer_in","amount":400000.0,"timestamp":"2026-08-21 23:20:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000167","account_id":"ACC2004","counterparty_id":"SENDER5","transaction_type":"transfer_in","amount":400000.0,"timestamp":"2026-08-21 23:40:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000168","account_id":"ACC2004","counterparty_id":"MULE_NEXT","transaction_type":"transfer_out","amount":2200000.0,"timestamp":"2026-08-22 01:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000169","account_id":"ACC3001","counterparty_id":null,"transaction_type":"cash_in","amount":100000.0,"timestamp":"2026-08-20 21:00:00","channel":"agent","agent_id":"AGENT500","card_id":null,"merchant_id":null},{"transaction_id":"TXN000170","account_id":"ACC3002","counterparty_id":null,"transaction_type":"cash_out","amount":800000.0,"timestamp":"2026-08-20 21:10:00","channel":"agent","agent_id":"AGENT500","card_id":null,"merchant_id":null},{"transaction_id":"TXN000171","account_id":"ACC3003","counterparty_id":null,"transaction_type":"cash_out","amount":600000.0,"timestamp":"2026-08-20 21:20:00","channel":"agent","agent_id":"AGENT500","card_id":null,"merchant_id":null},{"transaction_id":"TXN000172","account_id":"ACC2005","counterparty_id":null,"transaction_type":"transfer_out","amount":3500000.0,"timestamp":"2026-08-23 01:30:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000173","account_id":"ACC2006","counterparty_id":"ACC2007","transaction_type":"transfer_out","amount":5000000.0,"timestamp":"2026-08-22 18:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000174","account_id":"ACC2007","counterparty_id":"ACC2008","transaction_type":"transfer_out","amount":4900000.0,"timestamp":"2026-08-22 18:10:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000175","account_id":"ACC2008","counterparty_id":"ACC2009","transaction_type":"transfer_out","amount":4800000.0,"timestamp":"2026-08-22 18:25:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000176","account_id":"ACC4001","counterparty_id":"VICTIM01","transaction_type":"transfer_in","amount":3200000.0,"timestamp":"2026-08-23 04:00:00","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000177","account_id":"ACC4001","counterparty_id":"ACC4002","transaction_type":"transfer_out","amount":3000000.0,"timestamp":"2026-08-23 05:00:00","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000178","account_id":"ACC5000","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000179","account_id":"ACC5001","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:02:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000180","account_id":"ACC5002","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:04:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000181","account_id":"ACC5003","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:06:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000182","account_id":"ACC5004","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:08:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000183","account_id":"ACC5005","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:10:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000184","account_id":"ACC5006","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:12:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000185","account_id":"ACC5007","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:14:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000186","account_id":"ACC5008","counterparty_id":null,"transaction_type":"withdrawal","amount":250000.0,"timestamp":"2026-08-23 14:16:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000187","account_id":"ACC6001","counterparty_id":null,"transaction_type":"loan_disbursement","amount":900000.0,"timestamp":"2026-08-23 19:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000188","account_id":"ACC6001","counterparty_id":null,"transaction_type":"cash_out","amount":880000.0,"timestamp":"2026-08-23 19:45:00","channel":"agent","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000189","account_id":"ACC7000","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:00:00","channel":"pos","agent_id":null,"card_id":"CARD7000","merchant_id":"MERCH900"},{"transaction_id":"TXN000190","account_id":"ACC7001","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:05:00","channel":"pos","agent_id":null,"card_id":"CARD7001","merchant_id":"MERCH900"},{"transaction_id":"TXN000191","account_id":"ACC7002","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:10:00","channel":"pos","agent_id":null,"card_id":"CARD7002","merchant_id":"MERCH900"},{"transaction_id":"TXN000192","account_id":"ACC7003","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:15:00","channel":"pos","agent_id":null,"card_id":"CARD7003","merchant_id":"MERCH900"},{"transaction_id":"TXN000193","account_id":"ACC7004","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:20:00","channel":"pos","agent_id":null,"card_id":"CARD7004","merchant_id":"MERCH900"},{"transaction_id":"TXN000194","account_id":"ACC7005","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:25:00","channel":"pos","agent_id":null,"card_id":"CARD7005","merchant_id":"MERCH900"},{"transaction_id":"TXN000195","account_id":"ACC7006","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:30:00","channel":"pos","agent_id":null,"card_id":"CARD7006","merchant_id":"MERCH900"},{"transaction_id":"TXN000196","account_id":"ACC7007","counterparty_id":null,"transaction_type":"pos_purchase","amount":45000.0,"timestamp":"2026-08-24 00:35:00","channel":"pos","agent_id":null,"card_id":"CARD7007","merchant_id":"MERCH900"},{"transaction_id":"TXN000197","account_id":"ACC8001","counterparty_id":null,"transaction_type":"pos_purchase","amount":5000.0,"timestamp":"2026-08-24 05:00:00","channel":"pos","agent_id":null,"card_id":"CARD8001","merchant_id":"MERCH000"},{"transaction_id":"TXN000198","account_id":"ACC8001","counterparty_id":null,"transaction_type":"pos_purchase","amount":5000.0,"timestamp":"2026-08-24 05:03:00","channel":"pos","agent_id":null,"card_id":"CARD8001","merchant_id":"MERCH001"},{"transaction_id":"TXN000199","account_id":"ACC8001","counterparty_id":null,"transaction_type":"pos_purchase","amount":5000.0,"timestamp":"2026-08-24 05:06:00","channel":"pos","agent_id":null,"card_id":"CARD8001","merchant_id":"MERCH002"},{"transaction_id":"TXN000200","account_id":"ACC8001","counterparty_id":null,"transaction_type":"pos_purchase","amount":5000.0,"timestamp":"2026-08-24 05:09:00","channel":"pos","agent_id":null,"card_id":"CARD8001","merchant_id":"MERCH003"},{"transaction_id":"TXN000201","account_id":"ACC9001","counterparty_id":null,"transaction_type":"pos_purchase","amount":300000.0,"timestamp":"2026-08-24 10:00:00","channel":"pos","agent_id":null,"card_id":"CARD9001","merchant_id":"MERCH500"},{"transaction_id":"TXN000202","account_id":"ACC9002","counterparty_id":null,"transaction_type":"pos_purchase","amount":280000.0,"timestamp":"2026-08-24 11:00:00","channel":"pos","agent_id":null,"card_id":"CARD9001","merchant_id":"MERCH501"},{"transaction_id":"TXN000203","account_id":"ACC1100","counterparty_id":null,"transaction_type":"pos_purchase","amount":200000.0,"timestamp":"2026-08-24 15:00:00","channel":"pos","agent_id":null,"card_id":"CARD1100","merchant_id":"MERCH700"},{"transaction_id":"TXN000204","account_id":"ACC1101","counterparty_id":null,"transaction_type":"pos_purchase","amount":200000.0,"timestamp":"2026-08-24 15:10:00","channel":"pos","agent_id":null,"card_id":"CARD1101","merchant_id":"MERCH700"},{"transaction_id":"TXN000205","account_id":"ACC1102","counterparty_id":null,"transaction_type":"pos_purchase","amount":200000.0,"timestamp":"2026-08-24 15:20:00","channel":"pos","agent_id":null,"card_id":"CARD1102","merchant_id":"MERCH700"},{"transaction_id":"TXN000206","account_id":"ACC1100","counterparty_id":null,"transaction_type":"refund","amount":190000.0,"timestamp":"2026-08-24 16:00:00","channel":"pos","agent_id":null,"card_id":"CARD1100","merchant_id":"MERCH700"},{"transaction_id":"TXN000207","account_id":"ACC1101","counterparty_id":null,"transaction_type":"refund","amount":190000.0,"timestamp":"2026-08-24 16:05:00","channel":"pos","agent_id":null,"card_id":"CARD1101","merchant_id":"MERCH700"},{"transaction_id":"TXN000208","account_id":"ACC1201","counterparty_id":null,"transaction_type":"pos_purchase","amount":450000.0,"timestamp":"2026-08-24 20:00:00","channel":"pos","agent_id":null,"card_id":"CARD1201","merchant_id":"MERCH800"},{"transaction_id":"TXN000209","account_id":"ACC1201","counterparty_id":null,"transaction_type":"pos_purchase","amount":450000.0,"timestamp":"2026-08-24 20:30:00","channel":"pos","agent_id":null,"card_id":"CARD1201","merchant_id":"MERCH800"},{"transaction_id":"TXN000210","account_id":"ACC1201","counterparty_id":null,"transaction_type":"pos_purchase","amount":450000.0,"timestamp":"2026-08-24 21:00:00","channel":"pos","agent_id":null,"card_id":"CARD1201","merchant_id":"MERCH800"},{"transaction_id":"TXN000211","account_id":"ACC1201","counterparty_id":null,"transaction_type":"pos_purchase","amount":450000.0,"timestamp":"2026-08-24 21:30:00","channel":"pos","agent_id":null,"card_id":"CARD1201","merchant_id":"MERCH800"},{"transaction_id":"TXN000212","account_id":"ACC1301","counterparty_id":null,"transaction_type":"withdrawal","amount":0.0,"timestamp":"2026-08-25 01:00:00","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000213","account_id":"ACC1301","counterparty_id":"NEWBENEFICIARY","transaction_type":"transfer_out","amount":4500000.0,"timestamp":"2026-08-25 03:00:00","channel":"bank_transfer","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000214","account_id":"ACC1401","counterparty_id":null,"transaction_type":"withdrawal","amount":0.0,"timestamp":"2026-08-25 06:00:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000215","account_id":"ACC1401","counterparty_id":"ATTACKER_ACCT","transaction_type":"transfer_out","amount":900000.0,"timestamp":"2026-08-25 06:15:00","channel":"mobile_money","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000216","account_id":"ACC1501","counterparty_id":null,"transaction_type":"withdrawal","amount":300000.0,"timestamp":"2026-08-25 11:00:00","channel":"atm","agent_id":null,"card_id":null,"merchant_id":null},{"transaction_id":"TXN000217","account_id":"ACC1501","counterparty_id":null,"transaction_type":"withdrawal","amount":280000.0,"timestamp":"2026-08-25 11:08:00","channel":"atm","agent_id":null,"card_id":null,"merchant_id":null}];
+
+const sevOrder = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3};
+ALERTS.sort((a,b) => sevOrder[a.severity] - sevOrder[b.severity] || b.score - a.score);
+
+function renderStats() {
+  const counts = {CRITICAL:0, HIGH:0, MEDIUM:0};
+  ALERTS.forEach(a => counts[a.severity] = (counts[a.severity]||0)+1);
+  const el = document.getElementById('stats');
+  el.innerHTML = `
+    <div class="stat total"><div class="n">${ALERTS.length}</div><div class="l">Total Alerts</div></div>
+    <div class="stat critical"><div class="n">${counts.CRITICAL||0}</div><div class="l">Critical</div></div>
+    <div class="stat high"><div class="n">${counts.HIGH||0}</div><div class="l">High</div></div>
+    <div class="stat medium"><div class="n">${counts.MEDIUM||0}</div><div class="l">Medium</div></div>
+  `;
+}
+
+let activeFilter = 'ALL';
+function renderFilters() {
+  const sevs = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM'];
+  const el = document.getElementById('filters');
+  el.innerHTML = sevs.map(s => `<div class="chip ${s===activeFilter?'active':''}" data-sev="${s}">${s}</div>`).join('');
+  el.querySelectorAll('.chip').forEach(chip => {
+    chip.onclick = () => { activeFilter = chip.dataset.sev; renderFilters(); renderList(); };
+  });
+}
+
+function renderList() {
+  const list = activeFilter === 'ALL' ? ALERTS : ALERTS.filter(a => a.severity === activeFilter);
+  const el = document.getElementById('alertList');
+  el.innerHTML = list.map((a, i) => `
+    <div class="card" id="card-${i}">
+      <div class="card-head" onclick="document.getElementById('card-${i}').classList.toggle('open')">
+        <div class="sev ${a.severity}">${a.severity}</div>
+        <div class="card-title">${a.rule_name}<div class="rule-tag">${a.rule_id} · acct ${a.account_id}</div></div>
+        <div class="card-meta">${a.timestamp.split('.')[0]}</div>
+        <div class="score">${a.score}</div>
+      </div>
+      <div class="card-body">
+        <p>${a.description}</p>
+        <div class="evidence">${JSON.stringify(a.evidence, null, 2)}</div>
+        ${renderHunts(a.suggested_hunts)}
+        <button class="ai-btn" id="briefBtn-${i}" onclick="generateBrief(${i}, event)">
+          <span class="spinner" id="briefSpin-${i}"></span>
+          <span id="briefLabel-${i}">🔎 Generate AI investigation brief</span>
+        </button>
+        <div class="brief" id="brief-${i}"><span class="tag">AI Investigation Brief</span><div id="briefText-${i}"></div></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderHunts(hunts) {
+  if (!hunts || hunts.length === 0) return '';
+  const items = hunts.map(h => `
+    <div class="hunt-item">
+      <span class="hunt-type">${h.hunt_type.replace(/_/g, ' ')}</span>
+      <div class="hunt-rationale">${h.rationale}</div>
+      <div class="hunt-results">${Array.isArray(h.results) ? h.results.map(r => typeof r === 'object' ? JSON.stringify(r) : r).join(', ') : ''}</div>
+    </div>
+  `).join('');
+  return `<div class="hunt-section"><span class="lbl" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--low);text-transform:uppercase;letter-spacing:0.08em;">🧭 Suggested hunts</span>${items}</div>`;
+}
+
+renderStats();
+renderFilters();
+renderList();
+populateHuntSelects();
+
+// ---------------- Fraud hunting (client-side port of jicho/hunting.py) ----------------
+// Deliberately separate from the alerts above: detection is reactive (a rule
+// fires or it doesn't), hunting is proactive (an investigator starts from a
+// lead and searches) — see CLAUDE.md Section 8. These functions mirror
+// FraudHunter.search()/account_network()/shared_attribute_accounts() exactly
+// against the TRANSACTIONS array embedded above, so this panel behaves
+// identically to running the same queries against jicho.hunting in Python.
+
+function populateHuntSelects() {
+  const channels = [...new Set(TRANSACTIONS.map(t => t.channel))].sort();
+  const types = [...new Set(TRANSACTIONS.map(t => t.transaction_type))].sort();
+  const chSel = document.getElementById('hf-channel');
+  channels.forEach(c => chSel.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
+  const tySel = document.getElementById('hf-type');
+  types.forEach(t => tySel.insertAdjacentHTML('beforeend', `<option value="${t}">${t}</option>`));
+}
+
+function switchHuntTab(tab) {
+  document.querySelectorAll('.hunt-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.getElementById('huntSearchPanel').classList.toggle('active', tab === 'search');
+  document.getElementById('huntNetworkPanel').classList.toggle('active', tab === 'network');
+}
+
+// Mirrors FraudHunter.search(): all filters AND-combined, sorted by time.
+function huntSearch(filters) {
+  let result = TRANSACTIONS;
+  const eq = (key) => { if (filters[key]) result = result.filter(t => t[key] === filters[key]); };
+  eq('account_id'); eq('counterparty_id'); eq('channel'); eq('transaction_type');
+  eq('agent_id'); eq('card_id'); eq('merchant_id');
+  if (filters.min_amount !== '' && filters.min_amount != null) {
+    result = result.filter(t => t.amount >= Number(filters.min_amount));
+  }
+  if (filters.max_amount !== '' && filters.max_amount != null) {
+    result = result.filter(t => t.amount <= Number(filters.max_amount));
+  }
+  return [...result].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
+const HUNT_RESULTS_CAP = 200;
+
+function runHuntSearch() {
+  const filters = {
+    account_id: document.getElementById('hf-account').value.trim(),
+    counterparty_id: document.getElementById('hf-counterparty').value.trim(),
+    agent_id: document.getElementById('hf-agent').value.trim(),
+    card_id: document.getElementById('hf-card').value.trim(),
+    merchant_id: document.getElementById('hf-merchant').value.trim(),
+    channel: document.getElementById('hf-channel').value,
+    transaction_type: document.getElementById('hf-type').value,
+    min_amount: document.getElementById('hf-min').value,
+    max_amount: document.getElementById('hf-max').value,
+  };
+  const results = huntSearch(filters);
+  const el = document.getElementById('huntSearchResults');
+  if (results.length === 0) {
+    el.innerHTML = `<div class="hunt-empty">No matching transactions — the equivalent of a SIEM query returning nothing. Try widening the filters.</div>`;
+    return;
+  }
+  const shown = results.slice(0, HUNT_RESULTS_CAP);
+  el.innerHTML = `
+    <div class="hunt-summary">${results.length} matching transaction(s), sorted by time${results.length > HUNT_RESULTS_CAP ? ` — showing first ${HUNT_RESULTS_CAP}` : ''}</div>
+    <table class="hunt-table">
+      <thead><tr><th>Time</th><th>Account</th><th>Counterparty</th><th>Type</th><th>Amount</th><th>Channel</th></tr></thead>
+      <tbody>
+        ${shown.map(t => `<tr>
+          <td>${t.timestamp}</td>
+          <td>${t.account_id}</td>
+          <td>${t.counterparty_id || '—'}</td>
+          <td>${t.transaction_type}</td>
+          <td>${Number(t.amount).toLocaleString()}</td>
+          <td>${t.channel}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// Mirrors FraudHunter.account_network(): BFS over the counterparty graph.
+// `parent` (not present in the Python return value) is tracked here only to
+// draw the spanning-tree edges in the visualization below.
+function accountNetwork(seedId, maxHops) {
+  const visited = new Map();
+  visited.set(seedId, { account_id: seedId, hop_distance: 0, connected_via: [], parent: null });
+  const queue = [[seedId, 0]];
+  while (queue.length) {
+    const [current, hop] = queue.shift();
+    if (hop >= maxHops) continue;
+    TRANSACTIONS.forEach(t => {
+      if (t.account_id === current && t.counterparty_id) {
+        addNetworkNeighbor(visited, queue, t.counterparty_id, hop, t.transaction_id, current);
+      }
+      if (t.counterparty_id === current && t.account_id) {
+        addNetworkNeighbor(visited, queue, t.account_id, hop, t.transaction_id, current);
+      }
+    });
+  }
+  return Array.from(visited.values()).sort((a, b) => a.hop_distance - b.hop_distance || a.account_id.localeCompare(b.account_id));
+}
+
+function addNetworkNeighbor(visited, queue, neighbor, hop, txnId, parent) {
+  if (!visited.has(neighbor)) {
+    visited.set(neighbor, { account_id: neighbor, hop_distance: hop + 1, connected_via: [txnId], parent });
+    queue.push([neighbor, hop + 1]);
+  } else {
+    const node = visited.get(neighbor);
+    if (!node.connected_via.includes(txnId)) node.connected_via.push(txnId);
+  }
+}
+
+// Mirrors FraudHunter.shared_attribute_accounts().
+function sharedAttributeAccounts(accountId, attribute) {
+  const values = new Set(TRANSACTIONS.filter(t => t.account_id === accountId && t[attribute]).map(t => t[attribute]));
+  if (values.size === 0) return [];
+  const related = new Set();
+  TRANSACTIONS.forEach(t => {
+    if (t[attribute] && values.has(t[attribute]) && t.account_id !== accountId) related.add(t.account_id);
+  });
+  return [...related].sort();
+}
+
+function runNetworkHunt() {
+  const seed = document.getElementById('net-seed').value.trim();
+  const maxHops = Math.max(1, Math.min(6, parseInt(document.getElementById('net-hops').value, 10) || 3));
+  const el = document.getElementById('huntNetworkResults');
+
+  if (!seed) {
+    el.innerHTML = `<div class="hunt-empty">Enter a seed account ID to trace its network.</div>`;
+    return;
+  }
+  if (!TRANSACTIONS.some(t => t.account_id === seed || t.counterparty_id === seed)) {
+    el.innerHTML = `<div class="hunt-empty">No transactions found for account ${seed} in this dataset.</div>`;
+    return;
+  }
+
+  const nodes = accountNetwork(seed, maxHops);
+  const sharedAgent = sharedAttributeAccounts(seed, 'agent_id');
+  const sharedCard = sharedAttributeAccounts(seed, 'card_id');
+
+  let html = `<div class="hunt-summary">${nodes.length} account(s) within ${maxHops} hop(s) of ${seed} via counterparty links</div>`;
+  html += renderNetworkSVG(nodes, seed);
+  html += `
+    <table class="hunt-table" style="margin-top:12px;">
+      <thead><tr><th>Hop</th><th>Account</th><th>Linked via</th></tr></thead>
+      <tbody>
+        ${nodes.map(n => `<tr>
+          <td>${n.hop_distance}</td>
+          <td>${n.account_id}${n.account_id === seed ? ' (seed)' : ''}</td>
+          <td>${n.connected_via.join(', ') || '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+  if (sharedAgent.length) {
+    html += `<div class="shared-attr-note">⚠ Shares an agent till with ${sharedAgent.length} other account(s): ${sharedAgent.join(', ')} — legitimate customers don't normally share a till with strangers.</div>`;
+  }
+  if (sharedCard.length) {
+    html += `<div class="shared-attr-note">⚠ Shares a card ID with ${sharedCard.length} other account(s): ${sharedCard.join(', ')} — check for a cloned or shared card.</div>`;
+  }
+  el.innerHTML = html;
+}
+
+// Concentric-circle layout by hop distance — deterministic and explainable,
+// not a force-directed black box: hop 0 (the seed) at the center, each
+// further hop on a wider ring, an edge drawn back to whichever node first
+// discovered it during the BFS.
+function renderNetworkSVG(nodes, seedId) {
+  const size = 340, cx = size / 2, cy = size / 2;
+  const maxHop = Math.max(...nodes.map(n => n.hop_distance), 1);
+  const ringGap = (size / 2 - 30) / maxHop;
+  const palette = ['var(--accent)', 'var(--low)', 'var(--medium)', 'var(--high)', 'var(--critical)'];
+  const hopColor = h => palette[Math.min(h, palette.length - 1)];
+
+  const byHop = {};
+  nodes.forEach(n => { (byHop[n.hop_distance] = byHop[n.hop_distance] || []).push(n); });
+
+  const coords = {};
+  Object.entries(byHop).forEach(([hop, group]) => {
+    hop = Number(hop);
+    if (hop === 0) { coords[group[0].account_id] = [cx, cy]; return; }
+    const r = hop * ringGap;
+    group.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
+      coords[n.account_id] = [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+    });
+  });
+
+  let edges = '', dots = '';
+  nodes.forEach(n => {
+    const [x, y] = coords[n.account_id];
+    if (n.parent && coords[n.parent]) {
+      const [px, py] = coords[n.parent];
+      edges += `<line x1="${px}" y1="${py}" x2="${x}" y2="${y}" style="stroke:var(--border);stroke-width:1.5"/>`;
+    }
+    const r = n.account_id === seedId ? 8 : 6;
+    dots += `<circle cx="${x}" cy="${y}" r="${r}" style="fill:${hopColor(n.hop_distance)};stroke:var(--bg);stroke-width:2"/>`;
+    dots += `<text x="${x}" y="${y - r - 4}" text-anchor="middle" class="network-node-label">${n.account_id}</text>`;
+  });
+
+  return `<div class="network-svg-wrap"><svg width="100%" viewBox="0 0 ${size} ${size}" style="max-width:${size}px;display:block;margin:0 auto;">${edges}${dots}</svg></div>`;
+}
+
+// ---------------- AI Agent layer ----------------
+// Inside the Claude.ai artifact sandbox, calls to api.anthropic.com are
+// proxied for you with no API key needed here — that's why AI_PROXY_URL
+// defaults to null. For a standalone deployment, run jicho/ai_proxy.py
+// (it holds the real Anthropic API key server-side) — it also serves this
+// file at http://localhost:5001/, so open the dashboard from there and
+// set this to the relative path '/api/claude'. Pointing this at a proxy
+// on a DIFFERENT origin instead (e.g. a full http://... URL) will be
+// blocked by the browser's CORS policy, since the proxy deliberately
+// doesn't send Access-Control-Allow-Origin — see jicho/ai_proxy.py's
+// module docstring for why that's a deliberate choice, not an oversight.
+const AI_PROXY_URL = null;
+
+async function callClaude(systemPrompt, userPrompt) {
+  const response = await fetch(AI_PROXY_URL || "https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }]
+    })
+  });
+  if (!response.ok) throw new Error("API request failed: " + response.status);
+  const data = await response.json();
+  return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+}
+
+const BRIEF_SYSTEM_PROMPT = `You are a fraud investigation analyst supporting a compliance team at
+an East/Central African financial institution. You will be given one fraud alert (rule that fired,
+account, evidence). Write a short, professional investigation brief with exactly these sections:
+1) What happened — plain-language summary of the transaction pattern.
+2) Why it's suspicious — tie it to the known fraud typology for this region.
+3) Recommended action — one of: Monitor only / Contact customer to verify / Freeze account pending review / Escalate to law enforcement & regulator — with one sentence of justification.
+4) Next data to pull — what the investigator should check next (e.g. KYC record, device history, related accounts).
+Only use facts given in the alert. Do not invent account holder names, phone numbers, or other details not provided. Keep it under 150 words.`;
+
+async function generateBrief(i, evt) {
+  evt.stopPropagation();
+  const alert = (activeFilter === 'ALL' ? ALERTS : ALERTS.filter(a => a.severity === activeFilter))[i];
+  const btn = document.getElementById(`briefBtn-${i}`);
+  const spin = document.getElementById(`briefSpin-${i}`);
+  const label = document.getElementById(`briefLabel-${i}`);
+  const briefBox = document.getElementById(`brief-${i}`);
+  const briefText = document.getElementById(`briefText-${i}`);
+
+  btn.disabled = true;
+  spin.classList.add('show');
+  label.textContent = 'Generating…';
+
+  try {
+    const prompt = `Alert: ${JSON.stringify(alert, null, 2)}`;
+    const result = await callClaude(BRIEF_SYSTEM_PROMPT, prompt);
+    briefText.textContent = result;
+    briefBox.classList.add('show');
+    label.textContent = '✓ Brief generated — click to view above';
+  } catch (e) {
+    briefText.textContent = "Couldn't generate a brief (" + e.message + "). This agent calls the Anthropic API directly from the browser, which only works inside Claude.ai's artifact sandbox — wire it to your own backend for standalone deployment.";
+    briefBox.classList.add('show');
+    label.textContent = '⚠ Generation failed — see note above';
+  } finally {
+    spin.classList.remove('show');
+    btn.disabled = false;
+  }
+}
+
+const ASK_SYSTEM_PROMPT = `You are Jicho, an AI fraud-analytics assistant embedded in a bank's fraud
+operations console in East Africa. You are given the full list of currently open fraud alerts as JSON.
+Answer the compliance officer's question using ONLY that data — do not invent accounts, amounts, or
+details not present in it. Be concise and direct, formatted for quick reading on a dashboard (short
+paragraphs or a short list, not long prose). If the question can't be answered from the given data, say so.`;
+
+function askPreset(q) {
+  document.getElementById('askInput').value = q;
+  askJicho();
+}
+
+async function askJicho() {
+  const input = document.getElementById('askInput');
+  const question = input.value.trim();
+  if (!question) return;
+  const sendBtn = document.getElementById('askSend');
+  const spinner = document.getElementById('askSpinner');
+  const answerBox = document.getElementById('askAnswer');
+
+  sendBtn.disabled = true;
+  spinner.classList.add('show');
+  answerBox.classList.remove('show');
+
+  try {
+    const prompt = `Alerts data:\n${JSON.stringify(ALERTS, null, 2)}\n\nQuestion: ${question}`;
+    const result = await callClaude(ASK_SYSTEM_PROMPT, prompt);
+    answerBox.textContent = result;
+    answerBox.classList.add('show');
+  } catch (e) {
+    answerBox.textContent = "Couldn't reach the AI agent (" + e.message + "). This works inside Claude.ai's artifact sandbox; for standalone deployment, route this call through your own backend holding the API key.";
+    answerBox.classList.add('show');
+  } finally {
+    spinner.classList.remove('show');
+    sendBtn.disabled = false;
+  }
+}
+
+// ---------------- Emerging-threat → rule drafting agent ----------------
+let nextRuleId = 19; // R1-R18 already exist in jicho/rules/known_patterns.py — never renumber them
+
+const RULE_DRAFT_SYSTEM_PROMPT = `You are a fraud detection engineer at an East/Central/Southern African
+financial institution, extending an existing Python rules engine (Jicho). You will be given: (1) the
+transaction data schema the engine works with, (2) the next available rule ID, and (3) a plain-language
+description of a new/emerging fraud scenario from an analyst. Your job is to draft a NEW detection rule
+matching the existing engine's style and conventions.
+
+Transaction schema (a pandas DataFrame, one row per transaction/event; see jicho/models.py):
+Required columns: transaction_id, account_id, transaction_type, amount, timestamp, channel.
+transaction_type is one of: deposit, withdrawal, transfer_in, transfer_out, cash_in, cash_out, sim_swap,
+loan_disbursement, pos_purchase, refund.
+Optional columns present on some rows: counterparty_id, agent_id, initiated_by_staff (bool), event_type,
+entry_mode (chip/swipe/contactless/manual/card_not_present), merchant_id, card_id, terminal_id,
+terminal_country, auth_mode. A column not listed here does not exist in the data the engine sees — if the
+scenario needs something else (call-center transcripts, KYC documents, biometrics, device fingerprints),
+say so in "caveats" rather than inventing a column.
+
+Existing rules use a plugin-registry pattern (jicho/rules/base.py) — each rule is an independent class,
+NOT a method on a shared class, and there is no run_all() to wire it into:
+
+  @register_rule
+  class DescriptiveRuleName(Rule):
+      rule_id = "R{n}"
+      rule_name = "Short Name"
+
+      def evaluate(self, df: pd.DataFrame, config: EngineConfig) -> list[Alert]:
+          alerts = []
+          ... filter/group df with pandas, using config.some_threshold for any tunable value ...
+          alerts.append(Alert(
+              rule_id=self.rule_id, rule_name=self.rule_name,
+              account_id=..., transaction_id=...,
+              timestamp=str(...), severity="LOW/MEDIUM/HIGH/CRITICAL", score=0-100,
+              description="...", evidence={...}
+          ))
+          return alerts
+
+Respond with ONLY a raw JSON object (no markdown fences, no preamble, no commentary outside the JSON) with these exact keys:
+{
+  "rule_id": "R{n}",
+  "rule_name": "short name",
+  "typology_summary": "1-2 sentences on the fraud pattern described",
+  "detection_logic": "plain-language explanation of the exact conditions that should trigger this rule",
+  "python_code": "a complete @register_rule Rule subclass exactly as shown above, with a real evaluate(self, df, config) method implementing the logic",
+  "config_additions": {"new_config_key": suggested_default_value},
+  "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+  "score": 0-100,
+  "caveats": "honest notes on false-positive risk, what real transaction data would be needed to validate thresholds, and any data the engine doesn't currently capture that this rule would actually need"
+}
+If the scenario genuinely cannot be detected from the given schema alone (e.g. it depends on call-center data, KYC documents, or biometrics the engine doesn't have), say so plainly in "caveats" and still provide the closest proxy-signal rule that IS detectable from this schema, noting its limitations.`;
+
+async function draftRule() {
+  const input = document.getElementById('scenarioInput');
+  const scenario = input.value.trim();
+  if (!scenario) return;
+  const btn = document.getElementById('draftBtn');
+  const spin = document.getElementById('draftSpinner');
+  const label = document.getElementById('draftLabel');
+  const out = document.getElementById('ruleOutput');
+
+  btn.disabled = true;
+  spin.classList.add('show');
+  label.textContent = 'Analyzing scenario…';
+  out.classList.remove('show');
+
+  try {
+    const prompt = `Next available rule ID: R${nextRuleId}\n\nAnalyst-reported scenario:\n${scenario}`;
+    const raw = await callClaude(RULE_DRAFT_SYSTEM_PROMPT, prompt);
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const rule = JSON.parse(cleaned);
+
+    out.innerHTML = `
+      <div class="rule-section">
+        <span class="lbl">${rule.rule_id} · ${rule.rule_name}</span>
+        <p>${rule.typology_summary}</p>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Detection Logic</span>
+        <p>${rule.detection_logic}</p>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Severity / Score</span>
+        <p>${rule.severity} · score ${rule.score}</p>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Drafted Python Rule <button class="copy-btn" onclick="copyCode(this)">Copy</button></span>
+        <pre class="code-block">${escapeHtml(rule.python_code)}</pre>
+      </div>
+      <div class="rule-section">
+        <span class="lbl">Suggested Config Additions</span>
+        <pre class="code-block">${escapeHtml(JSON.stringify(rule.config_additions, null, 2))}</pre>
+      </div>
+      <div class="review-note">⚠ Human review required: paste this class into jicho/rules/known_patterns.py — the @register_rule decorator means the engine auto-discovers it, no other wiring needed. Add the config keys above to jicho/config.py's EngineConfig and config/default_config.yaml, add a positive + negative test to tests/test_rules.py per the project's engineering standards, and validate thresholds against real (or realistic) transaction volumes before relying on it — this is a draft, not a deployed rule.<br><br><b>Caveats from the agent:</b> ${rule.caveats}</div>
+    `;
+    out.classList.add('show');
+    nextRuleId++;
+    label.textContent = 'Analyze scenario & draft rule';
+  } catch (e) {
+    out.innerHTML = `<div class="review-note">Couldn't draft a rule (${e.message}). This agent calls the Anthropic API directly from the browser, which only works inside Claude.ai's artifact sandbox — wire it to your own backend for standalone deployment. If the API responded but wasn't valid JSON, try rephrasing the scenario more concretely (what data changes, in what order, over what time window).</div>`;
+    out.classList.add('show');
+    label.textContent = 'Analyze scenario & draft rule';
+  } finally {
+    spin.classList.remove('show');
+    btn.disabled = false;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function copyCode(btn) {
+  const code = btn.closest('.rule-section').querySelector('.code-block').textContent;
+  navigator.clipboard.writeText(code);
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy', 1500);
+}
+</script>
+</body>
+</html>

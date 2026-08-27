@@ -1,0 +1,66 @@
+# Jicho fraud engine — default thresholds.
+# Review with your risk/compliance team before production use — these are
+# starting points grounded in typical transaction volumes, not validated
+# against any specific institution's data yet.
+
+sim_swap_window_hours: 12
+sim_swap_amount_threshold: 500000
+
+velocity_window_minutes: 30
+velocity_txn_count: 4
+
+structuring_threshold: 10000000
+structuring_window_hours: 24
+structuring_min_txns: 3
+
+mule_fanin_window_hours: 6
+mule_fanin_sender_count: 5
+mule_outflow_ratio: 0.8
+
+agent_cashout_ratio_threshold: 3.0
+
+offhours_start: 7
+offhours_end: 20
+offhours_amount_threshold: 2000000
+
+layering_window_minutes: 45
+layering_hop_count: 3
+
+dormant_sweep_window_hours: 6
+dormant_sweep_amount_threshold: 1000000
+dormant_sweep_ratio: 0.85
+
+sync_spike_window_minutes: 30
+sync_spike_account_count: 8
+
+loan_cashout_window_hours: 2
+loan_cashout_ratio: 0.9
+
+fallback_ratio_threshold: 0.015
+fallback_min_sample_size: 5
+
+card_testing_window_minutes: 20
+card_testing_amount_threshold: 20000
+card_testing_min_txns: 3
+
+impossible_travel_window_hours: 3
+
+refund_ratio_threshold: 0.3
+
+offline_auth_window_hours: 4
+offline_auth_count_threshold: 3
+
+bec_window_hours: 6
+bec_amount_threshold: 1000000
+
+ato_window_minutes: 30
+ato_amount_threshold: 500000
+
+atm_multi_terminal_window_minutes: 20
+
+# Unsupervised anomaly detection (jicho/anomaly.py) — off the 18 named
+# rules entirely, flags accounts that are statistical outliers against
+# the rest of the portfolio. See that module's docstring for method.
+anomaly_detection_enabled: true
+anomaly_zscore_threshold: 3.5
+anomaly_min_accounts_for_baseline: 10
