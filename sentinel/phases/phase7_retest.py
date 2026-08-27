@@ -24,6 +24,8 @@ def scope_has_changed(engagement: Engagement, current_scope_path: str | Path) ->
 
 
 def start_retest(engagement: Engagement, finding_id: str, current_scope_path: str | Path, confirm_fn=input) -> bool:
+    engagement.assert_not_stopped()
+
     if scope_has_changed(engagement, current_scope_path):
         print(
             "⚠ Scope has changed since this engagement's snapshot. Re-run "

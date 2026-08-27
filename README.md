@@ -33,6 +33,21 @@ that exact proposal.
 - **Destructive actions are blocked before a human is even asked**
   (`sentinel/approval.py::check_destructive`) — `sqlmap --dump`,
   `DROP TABLE`, `rm -rf`, etc. are refused outright, approval or not.
+- **Escalation is blocked by default** (`sentinel/approval.py::check_escalation`)
+  — anything reading as lateral movement, exfil, persistence, a reverse shell,
+  privesc, etc. is refused unless the proposal is explicitly marked
+  `--escalation-requested`, standing in for "the human explicitly asked for
+  this specific next step" (Hard Constraint 4).
+- **Emergency stop** (`sentinel stop` / `sentinel resume`) — halts every
+  target-touching action, cleanup, disclosure step, and retest on an
+  engagement immediately. Nothing proceeds again until `sentinel resume` is
+  run with an explicit reason; silence or a topic change is never treated as
+  resumption (Hard Constraint 17).
+- **Duplicate/exclusion check runs automatically** before every DAST
+  proposal (`sentinel/phases/phase1_25_dedup.py`, wired into
+  `phase3_dast.propose_and_run`) — a proposal matching a standing program
+  exclusion gets flagged with an extra confirmation before it can spend an
+  approval cycle (Hard Constraint 13).
 - **Tool integrity** (`sentinel/tools/registry.py`) — only tools in the
   registry can run at all. GUI/interactive/high-risk tools (Burp, Metasploit,
   Frida, Responder, CrackMapExec, ...) are `manual_only`: the runner drafts
@@ -47,6 +62,11 @@ that exact proposal.
   or denial, execution, and finding is appended to
   `engagements/<id>/action_log.jsonl`; the Phase 6 disclosure clearance
   chain gets its own separate `disclosure_log.jsonl`.
+- **SAST LLM triage is opt-in, not default** (`sentinel sast --llm-triage`)
+  — Semgrep/gitleaks/etc. output can include source code context lines, so
+  sending it to the LLM API for triage synthesis requires an explicit flag
+  each run (Hard Constraint 10). Without it you still get findings, just
+  with raw (redacted) tool output as the evidence instead of an LLM summary.
 
 ## Install
 
@@ -64,8 +84,10 @@ export $(grep -v '^#' .env | xargs)
 ```
 
 Everything else — scope lock, the approval gate, tool execution, and audit
-logging — works without a key. Pass `--no-llm` to skip LLM synthesis on any
-command that supports it.
+logging — works without a key. Pass `--no-llm` to skip LLM synthesis on
+`threat-intel`, `report`, and `disclose-draft`. `sast` is the other way
+round: LLM triage is off by default, and you opt in with `--llm-triage`
+(see Hard Constraint 10 note below).
 
 The security tools themselves (`nuclei`, `subfinder`, `semgrep`, ...) are
 **not** bundled — install only what you need from `sentinel list-tools`,
@@ -85,6 +107,14 @@ sentinel init "My Program" --scope my-program-scope.yaml --id my-program
 # 3. Phase 1 — confirm scope & authorization (interactive)
 sentinel intake --id my-program
 
+# Resuming a session later? Restate scope, phase, findings, and disclosure
+# state before proposing anything new (Hard Constraint 15):
+sentinel status --id my-program
+
+# Emergency stop, any time, from any phase (Hard Constraint 17):
+#   sentinel stop --id my-program --reason "..."
+#   sentinel resume --id my-program --reason "..."   # explicit, logged, required to continue
+
 # 4. Phase 1.5 — threat intel (real NVD data + optional LLM synthesis)
 sentinel threat-intel --id my-program \
   --stack "nginx, Django 5.x, PostgreSQL, GraphQL API" \
@@ -95,9 +125,17 @@ sentinel hypotheses --id my-program \
   --architecture "Public GraphQL API behind nginx, Django backend, S3-backed file uploads"
 
 # 6. Phase 2 — SAST (no approval gate; local code only)
+#    Findings use raw redacted tool output by default. Add --llm-triage only
+#    if you want the LLM to synthesize it (sends that redacted output to the
+#    API — explicit opt-in per Hard Constraint 10):
 sentinel sast --id my-program --run "semgrep=--config auto ./path/to/repo"
 
-# 7. Phase 3 — DAST, one proposal at a time, fresh approval every time
+# 7. Phase 3 — DAST, one proposal at a time, fresh approval every time.
+#    A proposal matching a standing program exclusion gets flagged first;
+#    anything reading as escalation (lateral movement, exfil, a shell,
+#    persistence, ...) is refused unless you pass --escalation-requested,
+#    which should only ever be true because the human explicitly asked for
+#    that specific next step.
 sentinel checklist   # see the baseline technique list
 sentinel propose --id my-program \
   --tool nuclei --args "-t cves/2025/ -rate-limit 5" \

@@ -30,6 +30,8 @@ def run_disclosure_gate(
 ) -> DisclosureRecord:
     """Ask each of the four disclosure-gate conditions one at a time,
     requiring a direct answer to each — never a blanket 'yes it's cleared'."""
+    engagement.assert_not_stopped()
+
     finding = _find_finding(engagement, finding_id)
     if finding is None:
         raise ValueError(f"No finding with id '{finding_id}' on this engagement.")
@@ -93,6 +95,8 @@ def draft_disclosure(
     timeline: dict,
     llm: SentinelLLM | None = None,
 ) -> str:
+    engagement.assert_not_stopped()
+
     if not disclosure_record.answers.all_clear():
         raise PermissionError(
             "Refusing to draft: this disclosure record did not clear all four gate conditions."
@@ -130,6 +134,8 @@ def approve_publish(
     """The one-shot, irreversible publish approval (system prompt Phase 6
     Step 4). This function only flips the local record/log — actually
     posting anywhere is a human action outside this tool's scope."""
+    engagement.assert_not_stopped()
+
     if not disclosure_record.answers.all_clear():
         raise PermissionError("Refusing to approve publish: gate conditions not all clear.")
 

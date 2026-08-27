@@ -1,11 +1,16 @@
-"""The approval gate: Hard Constraints 1, 2, 3, 4, 14.
+"""The approval gate: Hard Constraints 1, 2, 3, 4, 14, 17.
 
 This is the module that actually makes Sentinel safe. Every proposal that
 touches a live target must pass through `gate()`. It is designed so that
 even a compromised or careless caller cannot skip it silently:
 
+  - an emergency stop, if set on the engagement, blocks everything until
+    an explicit resume — checked before anything else
   - scope is re-checked here, not trusted from the caller
   - destructive patterns are hard-blocked BEFORE a human is even asked
+  - escalation-flavored proposals (lateral movement, exfil, persistence,
+    reverse shells, ...) are blocked unless the caller explicitly marks
+    them as a human-requested next step, not proposed unprompted
   - approval is always a fresh, single-use, interactive confirmation —
     there is no "approve all" and no caching across proposals
   - every outcome (blocked, denied, approved) is logged
@@ -39,6 +44,26 @@ _DESTRUCTIVE_PATTERNS = [
 
 _PENTEST_ONLY_TOOLS = {"crackmapexec", "netexec", "responder", "impacket"}
 
+# Deliberately conservative: proposals that read as going beyond "confirm it
+# exists" toward exploitation/persistence/lateral movement (Hard Constraint
+# 4). Not exhaustive — a floor, not a ceiling — and text-matched against
+# tool+args+rationale so a clearly-stated non-destructive intent in the
+# rationale doesn't help you dodge it; it only widens what gets caught.
+_ESCALATION_PATTERNS = [
+    re.compile(r"\blateral( |-)?movement\b", re.I),
+    re.compile(r"\bpriv(ilege)?[\s-]?esc(alation)?\b", re.I),
+    re.compile(r"\bpivot(ing)?\b", re.I),
+    re.compile(r"\bexfil(trat\w*)?\b", re.I),
+    re.compile(r"\bharvest\w*\s+credential", re.I),
+    re.compile(r"\breverse\s+shell\b", re.I),
+    re.compile(r"\bmeterpreter\b", re.I),
+    re.compile(r"\bbackdoor\b", re.I),
+    re.compile(r"\bpersist(ence)?\b", re.I),
+    re.compile(r"\bdomain\s+admin\b", re.I),
+    re.compile(r"\b(full|complete)\s+(compromise|takeover)\b", re.I),
+    re.compile(r"\bpost[\s-]?exploit\w*\b", re.I),
+]
+
 
 class ScopeBlocked(Exception):
     pass
@@ -52,10 +77,29 @@ class EngagementTypeBlocked(Exception):
     pass
 
 
+class EscalationNotRequested(Exception):
+    pass
+
+
+class EmergencyStopped(Exception):
+    pass
+
+
 def check_destructive(tool: str, args: str) -> str | None:
     """Returns the matched pattern text if the proposal looks destructive, else None."""
     haystack = f"{tool} {args}"
     for pattern in _DESTRUCTIVE_PATTERNS:
+        m = pattern.search(haystack)
+        if m:
+            return m.group(0)
+    return None
+
+
+def check_escalation(tool: str, args: str, rationale: str) -> str | None:
+    """Returns the matched pattern text if the proposal reads as escalation
+    beyond confirming a vulnerability's existence, else None."""
+    haystack = f"{tool} {args} {rationale}"
+    for pattern in _ESCALATION_PATTERNS:
         m = pattern.search(haystack)
         if m:
             return m.group(0)
@@ -67,13 +111,29 @@ def gate(
     scope: ScopeDoc,
     logger: EngagementLogger,
     confirm_fn=input,
+    stopped: bool = False,
+    stop_reason: str = "",
+    escalation_requested: bool = False,
 ) -> ApprovalRecord:
     """Run a single proposal through the full approval gate.
 
-    Raises ScopeBlocked / DestructiveActionBlocked / EngagementTypeBlocked
-    instead of ever silently proceeding. On a clean pass, prompts the human
-    with `confirm_fn` for a fresh yes/no and logs + returns the record either way.
+    Raises EmergencyStopped / ScopeBlocked / DestructiveActionBlocked /
+    EngagementTypeBlocked / EscalationNotRequested instead of ever silently
+    proceeding. On a clean pass, prompts the human with `confirm_fn` for a
+    fresh yes/no and logs + returns the record either way.
     """
+    # Hard Constraint 17: an emergency stop blocks everything, no exceptions,
+    # checked before the proposal is even logged as attempted.
+    if stopped:
+        logger.log_action(
+            "action_refused_engagement_stopped",
+            {"tool": proposal.tool, "target": proposal.target, "stop_reason": stop_reason},
+        )
+        raise EmergencyStopped(
+            f"Engagement is stopped ({stop_reason or 'no reason logged'}). "
+            f"Re-authorize with `sentinel resume` before any further action."
+        )
+
     logger.log_action("proposal_created", proposal)
 
     # Hard Constraint 16 / pentest-only tooling
@@ -109,6 +169,22 @@ def gate(
         logger.log_action("approval_blocked", record)
         raise DestructiveActionBlocked(record.reason)
 
+    # Hard Constraint 4: no escalation beyond "confirm it exists" unless the
+    # human explicitly asked for this specific next step.
+    escalation_hit = check_escalation(proposal.tool, proposal.args, proposal.rationale)
+    if escalation_hit and not escalation_requested:
+        record = ApprovalRecord(
+            proposal_id=proposal.id,
+            decision=ApprovalDecision.BLOCKED,
+            reason=(
+                f"reads as escalation beyond confirming existence ('{escalation_hit}'). "
+                f"Only proceed if the human explicitly asked for this next step, and only "
+                f"after flagging the risk to them — then re-propose with escalation_requested=True."
+            ),
+        )
+        logger.log_action("approval_blocked", record)
+        raise EscalationNotRequested(record.reason)
+
     # Hard Constraint 1: fresh, explicit, per-action human approval — no batching
     print("\n[PROPOSED ACTION]")
     print(f"  tool       : {proposal.tool}")
@@ -118,6 +194,8 @@ def gate(
     print(f"  rationale  : {proposal.rationale}")
     print(f"  source     : {proposal.source.value}")
     print(f"  phase      : {proposal.phase}")
+    if escalation_requested:
+        print("  ⚠ marked as an explicitly human-requested escalation step")
     answer = confirm_fn("Approve this exact action? [y/N]: ").strip().lower()
 
     decision = ApprovalDecision.APPROVED if answer == "y" else ApprovalDecision.DENIED

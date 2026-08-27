@@ -50,6 +50,8 @@ class Engagement:
         self.disclosures: list[DisclosureRecord] = []
         self.current_phase: str = "1_scope_intake"
         self.phase1_confirmed: bool = False
+        self.stopped: bool = False
+        self.stop_reason: str = ""
         self._load_state()
 
     # --- persistence ---
@@ -60,6 +62,8 @@ class Engagement:
         data = json.loads(self.state_path.read_text())
         self.current_phase = data.get("current_phase", self.current_phase)
         self.phase1_confirmed = data.get("phase1_confirmed", False)
+        self.stopped = data.get("stopped", False)
+        self.stop_reason = data.get("stop_reason", "")
         # findings/hypotheses/disclosures are kept as raw dicts on disk;
         # phases that need typed objects re-hydrate lazily where needed.
         self._raw_findings = data.get("findings", [])
@@ -73,6 +77,8 @@ class Engagement:
             "engagement_type": self.scope.engagement_type.value,
             "current_phase": self.current_phase,
             "phase1_confirmed": self.phase1_confirmed,
+            "stopped": self.stopped,
+            "stop_reason": self.stop_reason,
             "updated_at": now_iso(),
             "findings": [_to_jsonable(f) for f in self.findings] or getattr(self, "_raw_findings", []),
             "hypotheses": [_to_jsonable(h) for h in self.hypotheses] or getattr(self, "_raw_hypotheses", []),
@@ -99,6 +105,39 @@ class Engagement:
         self.disclosures.append(record)
         self.logger.log_disclosure("disclosure_record", record)
         self.save()
+
+    # --- emergency stop (Hard Constraint 17) ---
+
+    def stop(self, reason: str) -> None:
+        """Halt all further activity on this engagement immediately. No
+        further proposal, disclosure, or retest action will proceed until
+        `resume()` is called explicitly — silence or a topic change never
+        counts as resumption."""
+        self.stopped = True
+        self.stop_reason = reason
+        self.logger.log_action("emergency_stop", {"reason": reason})
+        self.save()
+
+    def resume(self, reason: str) -> None:
+        """Explicit, logged re-authorization. Requires a reason so the
+        audit trail shows this was a deliberate human decision, not a
+        default."""
+        if not reason.strip():
+            raise ValueError("resume() requires a non-empty reason — explicit re-authorization only.")
+        self.stopped = False
+        previous_reason = self.stop_reason
+        self.stop_reason = ""
+        self.logger.log_action("emergency_resume", {"previous_stop_reason": previous_reason, "resume_reason": reason})
+        self.save()
+
+    def assert_not_stopped(self) -> None:
+        if self.stopped:
+            from .approval import EmergencyStopped
+
+            raise EmergencyStopped(
+                f"Engagement is stopped ({self.stop_reason or 'no reason logged'}). "
+                f"Re-authorize with `sentinel resume` before any further action."
+            )
 
 
 def create_engagement(engagement_id: str, scope_path: str | Path) -> Engagement:

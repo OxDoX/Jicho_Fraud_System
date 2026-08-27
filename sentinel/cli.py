@@ -34,7 +34,8 @@ app = typer.Typer(help="Sentinel — approval-gated bug bounty / pentest agent."
 
 
 def _print_phase_banner(engagement: Engagement) -> None:
-    typer.echo(f"[engagement={engagement.id}] [phase={engagement.current_phase}]")
+    status = f"STOPPED: {engagement.stop_reason}" if engagement.stopped else "active"
+    typer.echo(f"[engagement={engagement.id}] [phase={engagement.current_phase}] [{status}]")
 
 
 def _load(engagement_id: str) -> Engagement:
@@ -75,6 +76,51 @@ def intake(engagement_id: str = typer.Option(..., "--id")):
     if not confirmed:
         typer.echo("Not confirmed. No further phase will run until this is confirmed.")
         raise typer.Exit(1)
+
+
+@app.command()
+def status(engagement_id: str = typer.Option(..., "--id")):
+    """Session continuity (Hard Constraint 15) — restate scope, authorization,
+    findings, and pending state before doing anything else on a resumed engagement."""
+    eng = _load(engagement_id)
+    _print_phase_banner(eng)
+    typer.echo(phase1_scope.summarize(eng))
+    typer.echo(f"\nPhase 1 confirmed: {eng.phase1_confirmed}")
+    typer.echo(f"Findings on file: {len(eng.findings)}")
+    for f in eng.findings:
+        typer.echo(f"  - {f.id}  [{f.status}]  {f.title}")
+    typer.echo(f"Hypotheses on file: {len(eng.hypotheses)}")
+    typer.echo(f"Disclosure records on file: {len(eng.disclosures)}")
+    for d in eng.disclosures:
+        typer.echo(f"  - {d.id}  all_clear={d.answers.all_clear()}  published={d.published}")
+
+
+@app.command()
+def stop(
+    engagement_id: str = typer.Option(..., "--id"),
+    reason: str = typer.Option(..., "--reason", help="Why you're stopping — logged, and shown on every subsequent blocked action."),
+):
+    """Emergency stop (Hard Constraint 17). Halts every further target-touching
+    action, disclosure step, and retest on this engagement immediately."""
+    eng = _load(engagement_id)
+    eng.stop(reason)
+    typer.echo(f"Engagement '{engagement_id}' STOPPED: {reason}")
+    typer.echo("No further action will proceed until `sentinel resume` is run explicitly.")
+
+
+@app.command()
+def resume(
+    engagement_id: str = typer.Option(..., "--id"),
+    reason: str = typer.Option(..., "--reason", help="Why re-authorization is happening now — required, logged."),
+):
+    """Explicit re-authorization after an emergency stop. Never implicit —
+    silence or a topic change is never treated as resumption."""
+    eng = _load(engagement_id)
+    if not eng.stopped:
+        typer.echo("Engagement is not currently stopped.")
+        raise typer.Exit(1)
+    eng.resume(reason)
+    typer.echo(f"Engagement '{engagement_id}' RESUMED: {reason}")
 
 
 # --------------------------------------------------------------------------
@@ -151,11 +197,22 @@ def sast(
     engagement_id: str = typer.Option(..., "--id"),
     run: List[str] = typer.Option(..., "--run", help='Repeatable: "tool_name=args", e.g. --run "semgrep=--config auto ."'),
     model: str = typer.Option("claude-sonnet-4-5", "--model"),
-    no_llm: bool = typer.Option(False, "--no-llm"),
+    llm_triage: bool = typer.Option(
+        False,
+        "--llm-triage",
+        help=(
+            "Explicit opt-in (Hard Constraint 10): send this run's redacted tool "
+            "output — which can include source code context lines — to the "
+            "configured LLM API for triage synthesis. Off by default; without it "
+            "you get the raw (redacted) tool output as the finding evidence."
+        ),
+    ),
 ):
     eng = _load(engagement_id)
     phase1_scope.require_confirmed(eng)
     _print_phase_banner(eng)
+    if llm_triage:
+        typer.echo("⚠ --llm-triage is on: redacted tool output for this run will be sent to the LLM API.")
     tool_runs = []
     for spec in run:
         if "=" not in spec:
@@ -163,7 +220,7 @@ def sast(
             raise typer.Exit(1)
         name, args = spec.split("=", 1)
         tool_runs.append((name.strip(), args.strip()))
-    llm = None if no_llm else _require_llm(model)
+    llm = _require_llm(model) if llm_triage else None
     findings = phase2_sast.run(eng, tool_runs, llm=llm)
     typer.echo(f"{len(findings)} finding(s) recorded. Run `sentinel findings --id {engagement_id}` to list.")
 
@@ -182,6 +239,16 @@ def propose(
     expected: str = typer.Option(..., "--expected", help="Expected outcome."),
     rationale: str = typer.Option(..., "--rationale"),
     source: str = typer.Option("baseline", "--source", help="baseline | threat_intel | novel_hypothesis"),
+    escalation_requested: bool = typer.Option(
+        False,
+        "--escalation-requested",
+        help=(
+            "Hard Constraint 4: only pass this if the human explicitly asked for "
+            "this specific next step beyond confirming a vulnerability exists, "
+            "after you flagged the risk to them. Without it, anything reading as "
+            "lateral movement / exfil / persistence / a shell / privesc is blocked."
+        ),
+    ),
 ):
     eng = _load(engagement_id)
     phase1_scope.require_confirmed(eng)
@@ -193,8 +260,16 @@ def propose(
         raise typer.Exit(1)
 
     try:
-        phase3_dast.propose_and_run(eng, tool, args, target, expected, rationale, source=src)
-    except (approval.ScopeBlocked, approval.DestructiveActionBlocked, approval.EngagementTypeBlocked) as e:
+        phase3_dast.propose_and_run(
+            eng, tool, args, target, expected, rationale, source=src, escalation_requested=escalation_requested
+        )
+    except (
+        approval.EmergencyStopped,
+        approval.ScopeBlocked,
+        approval.DestructiveActionBlocked,
+        approval.EngagementTypeBlocked,
+        approval.EscalationNotRequested,
+    ) as e:
         typer.echo(f"BLOCKED: {e}", err=True)
         raise typer.Exit(1)
 
@@ -239,7 +314,11 @@ def cleanup(
     target: str = typer.Option(..., "--target"),
 ):
     eng = _load(engagement_id)
-    phase4_5_cleanup.propose_cleanup(eng, description, target)
+    try:
+        phase4_5_cleanup.propose_cleanup(eng, description, target)
+    except (approval.EmergencyStopped, approval.ScopeBlocked) as e:
+        typer.echo(f"BLOCKED: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command("scan-leftover-state")
@@ -281,7 +360,11 @@ def disclose_gate(
     approved_by: str = typer.Option(..., "--approved-by", help="Human researcher of record."),
 ):
     eng = _load(engagement_id)
-    record = phase6_disclosure.run_disclosure_gate(eng, finding_id, approved_by)
+    try:
+        record = phase6_disclosure.run_disclosure_gate(eng, finding_id, approved_by)
+    except approval.EmergencyStopped as e:
+        typer.echo(f"BLOCKED: {e}", err=True)
+        raise typer.Exit(1)
     typer.echo(f"disclosure record id: {record.id}  all_clear={record.answers.all_clear()}")
 
 
@@ -312,7 +395,7 @@ def disclose_draft(
     llm = None if no_llm else _require_llm(model)
     try:
         path = phase6_disclosure.draft_disclosure(eng, finding_id, record, timeline, llm=llm)
-    except PermissionError as e:
+    except (PermissionError, approval.EmergencyStopped) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1)
     typer.echo(f"Draft written to {path} (DRAFT — NOT PUBLISHED).")
@@ -330,7 +413,7 @@ def publish(
         raise typer.Exit(1)
     try:
         approved = phase6_disclosure.approve_publish(eng, record)
-    except PermissionError as e:
+    except (PermissionError, approval.EmergencyStopped) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1)
     typer.echo("Publish approved and logged." if approved else "Publish declined.")
@@ -348,7 +431,11 @@ def retest(
     scope: Path = typer.Option(..., "--scope", help="Current scope doc to re-confirm against."),
 ):
     eng = _load(engagement_id)
-    started = phase7_retest.start_retest(eng, finding_id, scope)
+    try:
+        started = phase7_retest.start_retest(eng, finding_id, scope)
+    except approval.EmergencyStopped as e:
+        typer.echo(f"BLOCKED: {e}", err=True)
+        raise typer.Exit(1)
     if not started:
         raise typer.Exit(1)
 
