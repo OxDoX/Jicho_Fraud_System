@@ -213,7 +213,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 120 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 126 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
@@ -544,12 +544,32 @@ are out of scope entirely (this codebase patching itself isn't something
 it can safely do to itself), and `threat_advisory` packages carry no
 payload to apply, only information for a human to read.
 
-21 tests cover this: correct signature acceptance, a tampered payload
-(checksum mismatch), a package signed by the wrong key, every fail-safe
-path (network failure, no update available, spoofed package) leaving the
-engine untouched, promotion requiring a named reviewer, the rollback
-history correctly capping at 3 versions, the regression-test's before/after
-diff on a real sample, and the air-gapped file-import path round-tripping
+**A real gap this caught during its own development, not a hypothetical:**
+a `config_update` package can never touch `prevention_enabled`,
+`block_eligible_rule_ids`, `block_min_score`, `hold_min_score`, or
+`prevention_fail_mode` — even one that verifies perfectly. Section 6 above
+is explicit that enabling prevention or whitelisting a rule for blocking
+is a governance decision an institution's own risk/compliance function
+must make deliberately, never "enabled unilaterally by an engineer." A
+vendor's signature only proves a package came from the vendor, not that
+an institution reviewed and approved a change to what gets **blocked**
+rather than merely alerted on — so the first version of this module
+didn't stop a legitimately-signed package from silently flipping
+`prevention_enabled` to `true`, and would have let a reviewer approve it
+without necessarily noticing, buried in what looked like a routine
+threshold retune. Fixed by rejecting any `config_update` package touching
+those fields at both `run_regression_test()` and `promote()`, verified
+by reproducing the exact scenario before and after the fix.
+
+29 tests cover this: correct signature acceptance, a tampered payload
+(checksum mismatch), a package signed by the wrong key, a malformed
+public key configuration, every fail-safe path (network failure, no
+update available, spoofed package) leaving the engine untouched,
+promotion requiring a named reviewer, an invalid config override being
+rejected before any file is touched, all five prevention-governance
+fields being rejected even under a valid signature, the rollback history
+correctly capping at 3 versions, the regression-test's before/after diff
+on a real sample, and the air-gapped file-import path round-tripping
 correctly through signature verification.
 
 **New dependency:** `cryptography`, for Ed25519 signature verification —

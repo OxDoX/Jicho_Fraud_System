@@ -139,7 +139,7 @@ and re-deriving from scratch risks reintroducing them:
 - `jicho/update_agent.py` — the on-prem Update Agent from Section 10:
   pull, verify (Ed25519 signature + SHA-256 checksum), stage, human-gated
   promote, local rollback. See Section 10 for the full behavior.
-- `tests/` — 120 tests, pytest, covering positive/negative cases per rule,
+- `tests/` — 126 tests, pytest, covering positive/negative cases per rule,
   config/schema validation, engine fault isolation, hunting, the
   hunt-suggestion bridge, calibration (including the regression test
   above), real-time scoring (including a rule-classification regression
@@ -318,7 +318,15 @@ Summary for build purposes:
   `fetch_from_file()` (air-gapped manual import via removable media, per
   the deployment doc's Section 5.4) are both provided, kept separate from
   the verification/staging logic — the same transport-agnostic split
-  `jicho/realtime.py` already uses.
+  `jicho/realtime.py` already uses. A `config_update` package can never
+  touch `prevention_enabled`, `block_eligible_rule_ids`, or the other
+  prevention-policy fields (`PREVENTION_GOVERNANCE_FIELDS`), even under a
+  perfectly valid signature — Section 6's "never enabled unilaterally by
+  an engineer" applies just as much to a vendor-signed cloud update as to
+  a developer's own commit. An early version of this module didn't
+  enforce that and would have let a legitimately-signed package silently
+  flip prevention on; caught and fixed during this module's own
+  development, with a regression test reproducing the exact scenario.
 
 ## 11. Build order if starting from zero
 

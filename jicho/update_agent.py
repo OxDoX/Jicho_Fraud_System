@@ -50,6 +50,19 @@ What this reference implementation does NOT do, stated plainly:
   - promote()'s YAML rewrite uses plain PyYAML, which does not preserve
     comments in config/default_config.yaml — an accepted limitation for a
     reference implementation, not something to paper over.
+
+One more boundary, worth its own paragraph rather than a bullet: a
+config_update package can never touch prevention_enabled,
+block_eligible_rule_ids, block_min_score, hold_min_score, or
+prevention_fail_mode (see PREVENTION_GOVERNANCE_FIELDS below) — even one
+that verifies perfectly. CLAUDE.md Section 6 is explicit that enabling
+prevention or whitelisting a rule for blocking is a governance decision an
+institution's own risk/compliance function must make deliberately, never
+something "enabled unilaterally by an engineer." A vendor's signature only
+proves the package came from the vendor, not that an institution reviewed
+and approved a change to what gets BLOCKED versus merely alerted on — so
+this is enforced in code, not left to a reviewer noticing it buried in an
+otherwise-routine threshold retune.
 """
 
 import hashlib
@@ -75,6 +88,23 @@ logger = get_logger(__name__)
 
 PackageType = Literal["config_update", "new_rule", "threat_advisory", "software_patch"]
 MAX_ROLLBACK_HISTORY = 3
+
+# CLAUDE.md Section 6 is explicit and repeated: enabling prevention or
+# whitelisting a rule for blocking is "a governance decision, not an
+# engineering one," requiring an institution's own risk/compliance
+# function to sign off after measuring real-world false-positive rates —
+# "never enabled unilaterally by an engineer." A cloud-distributed
+# config_update package is signed by the VENDOR, not the institution, so
+# a package that legitimately passes signature verification could still
+# silently flip prevention_enabled or add to block_eligible_rule_ids if
+# nothing stopped it — that would let a vendor push, and a reviewer
+# skimming what looks like an ordinary threshold retune approve, a change
+# to which transactions get BLOCKED rather than just alerted on. These
+# fields can only ever be changed by an institution editing its own
+# config directly, never via this channel.
+PREVENTION_GOVERNANCE_FIELDS = frozenset(
+    {"prevention_enabled", "block_eligible_rule_ids", "block_min_score", "hold_min_score", "prevention_fail_mode"}
+)
 
 
 @dataclass
@@ -124,6 +154,17 @@ class RegressionResult:
 
 def compute_checksum(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def _reject_prevention_governance_overrides(overrides: dict) -> None:
+    touched = set(overrides) & PREVENTION_GOVERNANCE_FIELDS
+    if touched:
+        raise UpdatePackageError(
+            f"This config_update package sets {sorted(touched)}, which control prevention/blocking "
+            "behavior. These fields can never be changed via a cloud update package — see "
+            "PREVENTION_GOVERNANCE_FIELDS in this module's docstring for why. An institution's own "
+            "risk/compliance function must change them directly, outside this channel."
+        )
 
 
 def verify_package(package: UpdatePackage, public_key_pem: bytes) -> None:
@@ -244,6 +285,7 @@ class UpdateAgent:
             )
 
         overrides = json.loads(staged.package.payload)
+        _reject_prevention_governance_overrides(overrides)
         staged_config = EngineConfig(**{**current_config.model_dump(), **overrides})
 
         before_alerts = FraudEngine(config=current_config).run(sample_df)
@@ -276,6 +318,9 @@ class UpdateAgent:
             raise ValueError("promote() requires a named reviewer — this is a human-accountable action")
 
         overrides = json.loads(staged.package.payload)
+        # Defense in depth: also checked in run_regression_test(), but promote() must never assume
+        # every caller ran that step first — this is the actual gate that writes to disk.
+        _reject_prevention_governance_overrides(overrides)
         current: dict = {}
         if os.path.exists(config_path):
             with open(config_path) as f:

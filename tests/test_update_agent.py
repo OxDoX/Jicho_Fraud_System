@@ -198,6 +198,53 @@ def test_promote_rejects_invalid_config_override_without_writing_or_backing_up(a
     assert not history_dir.exists() or list(history_dir.iterdir()) == []
 
 
+@pytest.mark.parametrize(
+    "governance_override",
+    [
+        {"prevention_enabled": True},
+        {"block_eligible_rule_ids": ["R1"]},
+        {"block_min_score": 50},
+        {"hold_min_score": 10},
+        {"prevention_fail_mode": "closed"},
+    ],
+)
+def test_promote_rejects_prevention_governance_overrides_even_with_valid_signature(
+    agent, vendor_key, tmp_path, governance_override
+):
+    """This is the governance gap CLAUDE.md Section 6 explicitly calls out:
+    enabling prevention or whitelisting a rule for blocking must be a
+    deliberate, non-engineering decision by the institution's own
+    risk/compliance function — never something a cloud-signed config_update
+    package can flip, no matter how legitimately it's signed. A package
+    that passes signature verification cleanly must still be blocked here.
+    """
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("velocity_txn_count: 4\n")
+
+    payload = json.dumps(governance_override).encode()
+    staged = agent.pull_and_stage(lambda: _make_package(vendor_key, payload))
+    assert staged is not None  # signature/checksum are legitimately valid — it DOES stage
+
+    with pytest.raises(UpdatePackageError, match="prevention/blocking"):
+        agent.promote(staged, str(config_path), reviewer="jane", decision_note="looked routine")
+
+    assert config_path.read_text() == "velocity_txn_count: 4\n"  # never silently applied
+
+
+def test_run_regression_test_rejects_prevention_governance_overrides(agent, vendor_key):
+    """Rejected before even running the regression test — a reviewer should
+    never see a "before/after alert count" report for a change that could
+    never be approved through this channel in the first place.
+    """
+    import pandas as pd
+
+    payload = json.dumps({"prevention_enabled": True}).encode()
+    staged = agent.pull_and_stage(lambda: _make_package(vendor_key, payload))
+
+    with pytest.raises(UpdatePackageError, match="prevention/blocking"):
+        agent.run_regression_test(staged, pd.DataFrame(), EngineConfig())
+
+
 def test_promote_rejects_non_config_update_package_type(agent, vendor_key, tmp_path):
     payload = b"def evaluate(self): pass"
     staged = agent.pull_and_stage(lambda: _make_package(vendor_key, payload, package_type="new_rule"))

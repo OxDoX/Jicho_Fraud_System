@@ -213,7 +213,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 120 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 126 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
@@ -488,4 +488,90 @@ fingerprint). It is explicitly not a live integration with any regulator
 system and should never be pointed at another institution's real data
 without that institution's contractual agreement — doing so wouldn't
 solve the privacy problem, just relocate it.
+
+## The Update Agent — the cloud-connected update channel, built
+
+Everything described above runs entirely on the institution's own premises.
+`jicho/update_agent.py` is the one piece of the deployment architecture
+(`docs/JFS_Deployment_Architecture.docx`, Section 5) that involves the
+outside world at all: a narrow, one-way, cryptographically verified channel
+that keeps detection rules current without ever transmitting a single
+customer record outward. This was a real gap — the architecture document
+described it in detail, but no code existed for it until now.
+
+The non-negotiable shape, matched line-for-line against the deployment doc:
+
+- **Pull-only.** The institution's Update Agent initiates every request;
+  nothing in this codebase accepts an inbound connection from a vendor
+  cloud service. `fetch_from_url()` is one concrete transport for that
+  pull, kept separate from the verification/staging logic — the same
+  transport-agnostic split already used in `jicho/realtime.py`.
+- **Verify before trust.** Every package's SHA-256 checksum and Ed25519
+  signature are checked before anything unpacks it. Either check failing
+  is treated as a security event and logged identically: the package is
+  discarded, never partially trusted.
+- **Stage, never auto-promote.** A verified package lands in a staging
+  area. `promote()` is a separate call requiring a named human reviewer —
+  the same human-review-before-deploy principle already established for
+  AI-drafted rules and prevention rule whitelisting elsewhere in this
+  project. Nothing in this module calls `promote()` on its own.
+- **Automated regression testing before that human decision.** Per the
+  deployment doc's governance table, `run_regression_test()` runs the
+  institution's own historical sample against both the currently-approved
+  config and the staged one, reporting exactly which rules' alert counts
+  would change — the reviewer sees real evidence, not just a diff of
+  numbers in a YAML file.
+- **Fails safe.** `pull_and_stage()` never raises — a network failure or a
+  failed verification is logged and returns `None`, so a broken or
+  compromised update source can never block, degrade, or pause detection.
+  Verified directly: a fetch that raises `ConnectionError`, a fetch that
+  finds nothing new, and a fetch that returns a package signed by the
+  wrong key all leave the engine's config completely untouched.
+- **Rollback is local.** The last 3 approved configs are retained on disk;
+  rolling back needs no cloud connectivity, per Section 5.3.
+- **Air-gapped institutions are supported**, not just alerting-only ones:
+  `fetch_from_file()` reads the same package format from a local manifest,
+  for manual import via removable media per an institution's own
+  data-import security procedure (Section 5.4).
+
+**Honest scope limit:** this reference implementation only automates
+promotion for `config_update` packages (a threshold retune, applied to
+YAML). A `new_rule` package still requires a human to paste reviewed code
+into `jicho/rules/known_patterns.py`, per the AI rule-drafting workflow's
+own review step — auto-applying a code change would violate that same
+principle this whole module exists to uphold. `software_patch` packages
+are out of scope entirely (this codebase patching itself isn't something
+it can safely do to itself), and `threat_advisory` packages carry no
+payload to apply, only information for a human to read.
+
+**A real gap this caught during its own development, not a hypothetical:**
+a `config_update` package can never touch `prevention_enabled`,
+`block_eligible_rule_ids`, `block_min_score`, `hold_min_score`, or
+`prevention_fail_mode` — even one that verifies perfectly. Section 6 above
+is explicit that enabling prevention or whitelisting a rule for blocking
+is a governance decision an institution's own risk/compliance function
+must make deliberately, never "enabled unilaterally by an engineer." A
+vendor's signature only proves a package came from the vendor, not that
+an institution reviewed and approved a change to what gets **blocked**
+rather than merely alerted on — so the first version of this module
+didn't stop a legitimately-signed package from silently flipping
+`prevention_enabled` to `true`, and would have let a reviewer approve it
+without necessarily noticing, buried in what looked like a routine
+threshold retune. Fixed by rejecting any `config_update` package touching
+those fields at both `run_regression_test()` and `promote()`, verified
+by reproducing the exact scenario before and after the fix.
+
+29 tests cover this: correct signature acceptance, a tampered payload
+(checksum mismatch), a package signed by the wrong key, a malformed
+public key configuration, every fail-safe path (network failure, no
+update available, spoofed package) leaving the engine untouched,
+promotion requiring a named reviewer, an invalid config override being
+rejected before any file is touched, all five prevention-governance
+fields being rejected even under a valid signature, the rollback history
+correctly capping at 3 versions, the regression-test's before/after diff
+on a real sample, and the air-gapped file-import path round-tripping
+correctly through signature verification.
+
+**New dependency:** `cryptography`, for Ed25519 signature verification —
+used only by `jicho/update_agent.py`.
 
