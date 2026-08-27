@@ -213,7 +213,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 128 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 130 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
@@ -506,6 +506,27 @@ fingerprint). It is explicitly not a live integration with any regulator
 system and should never be pointed at another institution's real data
 without that institution's contractual agreement — doing so wouldn't
 solve the privacy problem, just relocate it.
+
+**A real weakness found auditing this module later, not a hypothetical
+one:** `hash_account_id()` originally used a single pass of salted
+SHA-256. Confirmed directly that this doesn't actually protect a
+real-world account identifier: account numbers and mobile-money IDs are
+low-entropy (often a 9-11 digit space), and plain SHA-256 brute-forces a
+10-digit candidate space at ~660,000 guesses/sec on one CPU core in pure
+Python — seconds on commodity hardware, faster on a GPU — once the salt
+is known, which defeats the exact property this module exists to provide.
+This is the identical reasoning password-storage standards use to mandate
+a slow KDF over raw SHA-256, and it applies here for the same reason.
+Fixed to PBKDF2-HMAC-SHA256 (stdlib, no new dependency) — a real, if
+partial, mitigation, not a complete fix: it doesn't make a genuinely small
+ID space infeasible to brute-force, and Argon2id would resist a GPU/ASIC
+attacker better still, so whoever operates a real production matching
+utility should tune the iteration count (and consider Argon2id) against
+their own account-ID entropy and threat model. Since PBKDF2 is
+deliberately slow, `export_layering_fingerprints()` now caches each
+account ID's hash within one export call rather than recomputing it per
+transaction row — verified this keeps the full test suite fast (10 tests
+in under 2 seconds) despite the slower hash.
 
 ## The Update Agent — the cloud-connected update channel, built
 

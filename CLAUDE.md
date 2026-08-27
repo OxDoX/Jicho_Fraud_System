@@ -114,12 +114,18 @@ and re-deriving from scratch risks reintroducing them:
   fits the "adapts to emerging threats" story and why it's deliberately
   not a `Rule` subclass.
 - `jicho/federated_layering.py` — privacy-preserving cross-institution
-  matching primitive (salted SHA-256 hashing). This does NOT solve
-  cross-institution layering detection — that requires a legal data-sharing
-  agreement or regulator-run utility, which no codebase can create. It
-  proves the technical matching works without exposing raw account
-  numbers, so the system is ready the day such an agreement exists. Never
-  wire this against real inter-institution data without that agreement in
+  matching primitive (PBKDF2-HMAC-SHA256 hashing — a single fast SHA-256
+  pass was the original implementation but was found and fixed during
+  audit: it doesn't protect a low-entropy identifier like an account
+  number against brute-force once the salt is known, confirmed directly
+  at ~660,000 guesses/sec on one CPU core; PBKDF2_ITERATIONS documents
+  the trade-off and that Argon2id would do better still). This does NOT
+  solve cross-institution layering detection — that requires a legal
+  data-sharing agreement or regulator-run utility, which no codebase can
+  create. It proves the technical matching works without exposing raw
+  account numbers, so the system is ready the day such an agreement
+  exists. Never wire this against real inter-institution data without
+  that agreement in
   place.
 - `dashboard.html` — case-management console: alert triage, a standalone
   Fraud Hunting panel (manual search + account-network trace, a client-side
@@ -139,7 +145,7 @@ and re-deriving from scratch risks reintroducing them:
 - `jicho/update_agent.py` — the on-prem Update Agent from Section 10:
   pull, verify (Ed25519 signature + SHA-256 checksum), stage, human-gated
   promote, local rollback. See Section 10 for the full behavior.
-- `tests/` — 128 tests, pytest, covering positive/negative cases per rule,
+- `tests/` — 130 tests, pytest, covering positive/negative cases per rule,
   config/schema validation, engine fault isolation, hunting, the
   hunt-suggestion bridge, calibration (including the regression test
   above), real-time scoring (including a rule-classification regression
