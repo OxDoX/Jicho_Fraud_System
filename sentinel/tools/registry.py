@@ -57,7 +57,7 @@ for spec in [
     ToolSpec("waybackurls", "recon", "waybackurls", "Historical URLs", "go install github.com/tomnomnom/waybackurls@latest"),
     ToolSpec("gau", "recon", "gau", "Historical URLs", "go install github.com/lc/gau/v2/cmd/gau@latest"),
     ToolSpec("whatweb", "recon", "whatweb", "Tech fingerprinting", "apt install whatweb"),
-    ToolSpec("wappalyzer", "recon", "wappalyzer", "Tech fingerprinting", "npm install -g wappalyzer"),
+    ToolSpec("wappalyzer", "recon", "wappalyzer", "Tech fingerprinting", "the npm 'wappalyzer' package is an unmaintained stub with no CLI binary — the original project went closed-source; whatweb (already in this registry) covers the same job"),
 
     # --- DAST ---
     ToolSpec("nuclei", "dast", "nuclei", "Template-based vulnerability scanning", "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"),
@@ -69,13 +69,13 @@ for spec in [
     ToolSpec("sqlmap", "dast", "sqlmap", "SQLi — non-destructive flags only unless explicitly escalated", "pip install sqlmap"),
     ToolSpec("commix", "dast", "commix", "Command injection", "pip install commix"),
     ToolSpec("ffuf", "dast", "ffuf", "Fuzzing", "go install github.com/ffuf/ffuf/v2@latest"),
-    ToolSpec("wfuzz", "dast", "wfuzz", "Fuzzing", "pip install wfuzz"),
+    ToolSpec("wfuzz", "dast", "wfuzz", "Fuzzing", "pip install wfuzz (needs libcurl4-openssl-dev + libssl-dev for its pycurl dependency to build; ffuf, already in this registry, needs no such build step)"),
     ToolSpec("arjun", "dast", "arjun", "Hidden parameter discovery", "pip install arjun"),
-    ToolSpec("graphql-cop", "dast", "graphql-cop", "GraphQL introspection/batching abuse", "pip install graphql-cop"),
+    ToolSpec("graphql-cop", "dast", "graphql-cop", "GraphQL introspection/batching abuse", "git clone https://github.com/dolevf/graphql-cop (no working PyPI package — pip name is a stale unrelated placeholder)"),
     ToolSpec("inql", "dast", "inql", "GraphQL testing", "pip install inql", manual_only=True),
     ToolSpec("jwt_tool", "dast", "jwt_tool.py", "JWT flaws — alg confusion, weak secrets", "git clone https://github.com/ticarpi/jwt_tool"),
     ToolSpec("smuggler", "dast", "smuggler.py", "HTTP request smuggling variants", "git clone https://github.com/defparam/smuggler"),
-    ToolSpec("h2csmuggler", "dast", "h2csmuggler.py", "H2C smuggling", "pip install h2csmuggler"),
+    ToolSpec("h2csmuggler", "dast", "h2csmuggler.py", "H2C smuggling", "git clone https://github.com/BishopFox/h2csmuggler (no PyPI package)"),
     ToolSpec("corsy", "dast", "corsy.py", "CORS misconfig", "git clone https://github.com/s0md3v/Corsy"),
 
     # --- Network / Infrastructure ---
@@ -91,30 +91,30 @@ for spec in [
     ToolSpec("mitmproxy", "proxy", "mitmdump", "Scriptable interception", "pip install mitmproxy", manual_only=True),
 
     # --- SAST / Code Analysis (no approval gate — not live-target interaction) ---
-    ToolSpec("semgrep", "sast", "semgrep", "OSS rulesets, incl. custom rules", "pip install semgrep", sast=True),
+    ToolSpec("semgrep", "sast", "semgrep", "OSS rulesets, incl. custom rules", "pip install semgrep; on a restricted network, set SEMGREP_SEND_METRICS=off and use a local/offline --config (e.g. a bundled ruleset path) since --config auto phones home to semgrep.dev", sast=True),
     ToolSpec("codeql", "sast", "codeql", "Open query packs", "https://github.com/github/codeql-cli-binaries", sast=True),
     ToolSpec("bandit", "sast", "bandit", "Python SAST", "pip install bandit", sast=True),
     ToolSpec("gosec", "sast", "gosec", "Go SAST", "go install github.com/securego/gosec/v2/cmd/gosec@latest", sast=True),
     ToolSpec("eslint", "sast", "eslint", "JS/TS SAST with security plugins", "npm install -g eslint", sast=True),
     ToolSpec("brakeman", "sast", "brakeman", "Ruby on Rails SAST", "gem install brakeman", sast=True),
-    ToolSpec("gitleaks", "sast", "gitleaks", "Secret scanning", "go install github.com/gitleaks/gitleaks/v8@latest", sast=True),
-    ToolSpec("trufflehog", "sast", "trufflehog", "Secret scanning", "go install github.com/trufflesecurity/trufflehog/v3@latest", sast=True),
-    ToolSpec("trivy", "sast", "trivy", "Dependency/container/IaC + SCA", "apt install trivy", sast=True),
-    ToolSpec("grype", "sast", "grype", "Dependency/container SCA", "curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh", sast=True),
+    ToolSpec("gitleaks", "sast", "gitleaks", "Secret scanning", "go install github.com/zricethezav/gitleaks/v8@latest", sast=True),
+    ToolSpec("trufflehog", "sast", "trufflehog", "Secret scanning", "trufflehog's go.mod carries replace directives, which `go install` refuses to honor on any version — clone https://github.com/trufflesecurity/trufflehog and run `go build -o trufflehog .` from inside the checkout instead", sast=True),
+    ToolSpec("trivy", "sast", "trivy", "Dependency/container/IaC + SCA", "go install github.com/aquasecurity/trivy/cmd/trivy@v0.56.2 (not in default apt repos; @latest may need a newer Go toolchain than yours)", sast=True),
+    ToolSpec("grype", "sast", "grype", "Dependency/container SCA", "go install github.com/anchore/grype/cmd/grype@latest (the install.sh script needs direct github.com release access, which some sandboxed/proxied networks block)", sast=True),
     ToolSpec("checkov", "sast", "checkov", "IaC misconfig", "pip install checkov", sast=True),
     ToolSpec("tfsec", "sast", "tfsec", "Terraform misconfig", "go install github.com/aquasecurity/tfsec/cmd/tfsec@latest", sast=True),
 
     # --- Cloud-Specific (read-only, requires explicit scoped credentials from the human) ---
     ToolSpec("scoutsuite", "cloud", "scout", "Multi-cloud audit — read-only", "pip install scoutsuite", requires_credentials=True),
     ToolSpec("prowler", "cloud", "prowler", "AWS/Azure/GCP audit", "pip install prowler", requires_credentials=True),
-    ToolSpec("cloudfox", "cloud", "cloudfox", "Cloud pentest enumeration", "go install github.com/BishopFox/cloudfox@latest", requires_credentials=True),
+    ToolSpec("cloudfox", "cloud", "cloudfox", "Cloud pentest enumeration", "go install github.com/BishopFox/cloudfox@latest (large dependency tree — first install can take several minutes)", requires_credentials=True),
 
     # --- Mobile ---
     ToolSpec("mobsf", "mobile", "mobsf", "Static/dynamic analysis", "docker pull opensecurity/mobile-security-framework-mobsf", sast=True),
     ToolSpec("objection", "mobile", "objection", "Runtime instrumentation — explicit approval per session", "pip install objection", manual_only=True),
     ToolSpec("frida", "mobile", "frida", "Runtime instrumentation — high capability", "pip install frida-tools", manual_only=True),
     ToolSpec("apktool", "mobile", "apktool", "Android decompilation", "apt install apktool", sast=True),
-    ToolSpec("jadx", "mobile", "jadx", "Android decompilation", "apt install jadx", sast=True),
+    ToolSpec("jadx", "mobile", "jadx", "Android decompilation", "not in default apt repos on Debian/Ubuntu — download a release zip from https://github.com/skylot/jadx/releases and put jadx/bin on PATH", sast=True),
 
     # --- Cleanup (Phase 4.5) ---
     ToolSpec(

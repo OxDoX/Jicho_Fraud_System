@@ -131,7 +131,27 @@ round: LLM triage is off by default, and you opt in with `--llm-triage`
 The security tools themselves (`nuclei`, `subfinder`, `semgrep`, ...) are
 **not** bundled — install only what you need from `sentinel list-tools`,
 verifying provenance (official repo, checksums) before first use in an
-engagement, per Hard Constraint 8.
+engagement, per Hard Constraint 8. `scripts/install_tools.sh` installs as
+much of the registry as a Debian/Ubuntu-based box (Kali/Parrot included)
+can get via apt/go/pip/gem, using the exact commands verified to work
+while building this — including a few corrections to upstream docs (e.g.
+gitleaks' actual module path, grype/trivy needing a subpath or pinned
+version for `go install`, trufflehog needing a source build because its
+go.mod has replace directives `go install` refuses):
+
+```bash
+sudo ./scripts/install_tools.sh
+sentinel doctor --scope my-program-scope.yaml
+```
+
+It deliberately skips `manual_only` tools (Burp, Metasploit, Frida,
+Responder, CrackMapExec, NetExec, Impacket, objection, ZAP) since the
+runner never auto-executes those anyway, plus a few that need a manual,
+license-gated, or heavyweight step regardless of platform: `codeql`
+(license-gated binary download), `jadx` (no apt package — grab a release
+zip), `mobsf` (large Docker image). `wappalyzer`'s upstream CLI project is
+dead (the npm package is an unmaintained stub with no binary) — `whatweb`,
+already in the registry, covers the same job.
 
 Once installed, check what's actually ready on this machine rather than
 assuming:
