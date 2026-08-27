@@ -121,21 +121,31 @@ and re-deriving from scratch risks reintroducing them:
   numbers, so the system is ready the day such an agreement exists. Never
   wire this against real inter-institution data without that agreement in
   place.
-- `dashboard.html` — case-management console: alert triage, an AI
-  investigation-brief agent, an "Ask Jicho" natural-language query agent
-  over current alerts, and an AI rule-drafting agent for emerging
-  scenarios. The two AI-agent `fetch()` calls to `api.anthropic.com` work
-  unauthenticated ONLY inside Claude.ai's artifact sandbox — a standalone
-  deployment must proxy these through the institution's own backend holding
-  the API key server-side.
-- `tests/` — 87 tests, pytest, covering positive/negative cases per rule,
+- `dashboard.html` — case-management console: alert triage, a standalone
+  Fraud Hunting panel (manual search + account-network trace, a client-side
+  port of `hunting.py`, distinct from the per-alert "suggested hunts"), an
+  AI investigation-brief agent, an "Ask Jicho" natural-language query
+  agent over current alerts, and an AI rule-drafting agent for emerging
+  scenarios. The AI-agent `fetch()` calls to `api.anthropic.com` work
+  unauthenticated ONLY inside Claude.ai's artifact sandbox — set
+  `AI_PROXY_URL` to route them through `jicho/ai_proxy.py` for a standalone
+  deployment (see that module's docstring for why it also serves
+  `dashboard.html` itself, rather than just exposing the API: same-origin
+  is what avoids needing an open CORS policy).
+- `jicho/ai_proxy.py` — the backend proxy above: holds the Anthropic API
+  key server-side, forwards `dashboard.html`'s AI-agent request shape
+  unmodified, enforces a max-tokens cap. Not itself an auth layer — must
+  stay inside the institution's own network perimeter.
+- `tests/` — 94 tests, pytest, covering positive/negative cases per rule,
   config/schema validation, engine fault isolation, hunting, the
   hunt-suggestion bridge, calibration (including the regression test
   above), real-time scoring (including a rule-classification regression
   test), federated layering (including a proof that raw account IDs
-  never appear in an exported fingerprint), and the unsupervised anomaly
+  never appear in an exported fingerprint), the unsupervised anomaly
   layer (including a regression test that it never re-flags an account
-  a named rule already explained).
+  a named rule already explained), and the AI-agent backend proxy
+  (request forwarding, the max-tokens cap, and a proof the API key never
+  appears in a response body).
 
 Run `pytest tests/ -v` and `ruff check jicho/ tests/` before and after any
 change. Both must stay clean. This is not optional scaffolding — it's how

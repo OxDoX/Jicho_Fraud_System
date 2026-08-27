@@ -63,6 +63,7 @@ jicho/                          → installable package
   federated_layering.py          → privacy-preserving cross-institution matching primitive
   prevention.py                  → real-time block/hold/allow decisions, off by default, opt-in per rule
   anomaly.py                     → unsupervised anomaly layer: flags statistical outliers no named rule covers
+  ai_proxy.py                    → backend proxy holding the Anthropic API key for dashboard.html's AI agents
   rules/
     base.py                     → Rule ABC + plugin registry
     known_patterns.py           → all 18 detection rules
@@ -70,7 +71,7 @@ tests/                          → unit tests (pytest)
 config/default_config.yaml      → reviewable, tunable thresholds
 run.py                          → CLI entry point
 sample_data_generator.py        → synthetic demo data w/ planted patterns
-dashboard.html                  → case-management console + AI agents
+dashboard.html                  → case-management console + fraud hunting panel + AI agents
 pyproject.toml                  → packaging + ruff/mypy/pytest config
 ```
 
@@ -120,13 +121,33 @@ language reasoning rather than fixed logic:
   risk committee is the kind of thing that gets a vendor disqualified once
   someone technical asks a follow-up question.
 
-**Important deployment note:** `dashboard.html` calls the Anthropic API
-directly from the browser with no API key — that only works because it's
-running inside Claude.ai's artifact sandbox, which proxies the call for you.
-To deploy this standalone (e.g. hosted for a real client), route those `fetch`
-calls through your own backend that holds the API key server-side — never
-ship an API key in client-side HTML. This is a one-function change
-(`callClaude()` in `dashboard.html`) once you have that backend.
+**Deployment note — this is now built, not just documented as a to-do:**
+`dashboard.html` calls the Anthropic API directly from the browser with no
+API key — that only works inside Claude.ai's artifact sandbox, which
+proxies the call for you. `jicho/ai_proxy.py` is the standalone-deployment
+backend: it holds the real API key server-side and forwards the identical
+request shape the dashboard already sends, so switching over is one
+constant, not a rewrite:
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+python3 jicho/ai_proxy.py           # serves both the API and dashboard.html itself
+# open http://localhost:5001/, then in dashboard.html set:
+#   const AI_PROXY_URL = '/api/claude';
+```
+
+It deliberately also serves `dashboard.html` at `/` rather than just
+exposing the API: opening the dashboard as a `file://` page (or from any
+other origin) and pointing `AI_PROXY_URL` at a *different* origin gets
+silently blocked by the browser's CORS policy, since this proxy sends no
+`Access-Control-Allow-Origin` header — on purpose, because an open CORS
+policy would let any site reachable from the institution's network spend
+this API key's credits. Same-origin sidesteps the problem entirely instead
+of opening a new one. Verified end-to-end with a real browser (Playwright)
+against a real running Flask process — not just unit-tested against a
+mocked `fetch()`: the file://-origin case is confirmed broken by CORS as
+expected, and the same-origin case (dashboard served by the proxy itself)
+is confirmed working, including a full AI-brief round trip.
 
 ## Unsupervised anomaly detection — the third leg of "adapts to new threats"
 
@@ -191,7 +212,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 87 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 94 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
@@ -200,9 +221,11 @@ code itself would survive a real due-diligence review. Concretely:
   real-time incremental scorer (including a regression test on rule
   classification), the privacy-preserving cross-institution matching
   primitive (including a proof that raw account IDs never appear in an
-  exported fingerprint), and the unsupervised anomaly layer (including a
+  exported fingerprint), the unsupervised anomaly layer (including a
   regression test proving it never re-flags an account a named rule already
-  explained). Run with `pytest tests/ -v`.
+  explained), and the AI-agent backend proxy (request forwarding, the
+  max-tokens safety cap, and a proof the API key never appears in a
+  response body). Run with `pytest tests/ -v`.
 
 **New dependencies for the additions above**
 - `flask` and `requests` — the real-time HTTP API and its webhook dispatch.

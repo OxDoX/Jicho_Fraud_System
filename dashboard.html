@@ -793,11 +793,20 @@ function renderNetworkSVG(nodes, seedId) {
 }
 
 // ---------------- AI Agent layer ----------------
-// Calls the Anthropic API (proxied by the Claude.ai artifact sandbox — no key needed here).
-// If this dashboard is deployed outside that sandbox, point this at your own backend
-// which holds the real API key server-side.
+// Inside the Claude.ai artifact sandbox, calls to api.anthropic.com are
+// proxied for you with no API key needed here — that's why AI_PROXY_URL
+// defaults to null. For a standalone deployment, run jicho/ai_proxy.py
+// (it holds the real Anthropic API key server-side) — it also serves this
+// file at http://localhost:5001/, so open the dashboard from there and
+// set this to the relative path '/api/claude'. Pointing this at a proxy
+// on a DIFFERENT origin instead (e.g. a full http://... URL) will be
+// blocked by the browser's CORS policy, since the proxy deliberately
+// doesn't send Access-Control-Allow-Origin — see jicho/ai_proxy.py's
+// module docstring for why that's a deliberate choice, not an oversight.
+const AI_PROXY_URL = null;
+
 async function callClaude(systemPrompt, userPrompt) {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch(AI_PROXY_URL || "https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
