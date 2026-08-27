@@ -133,6 +133,21 @@ The security tools themselves (`nuclei`, `subfinder`, `semgrep`, ...) are
 verifying provenance (official repo, checksums) before first use in an
 engagement, per Hard Constraint 8.
 
+Once installed, check what's actually ready on this machine rather than
+assuming:
+
+```bash
+sentinel doctor --scope my-program-scope.yaml
+```
+
+This reports, concretely: whether `ANTHROPIC_API_KEY` is set and the
+`anthropic` package is importable, which of the approved tools are on
+`PATH` (grouped by category, with the install hint for anything missing),
+and whether the scope doc you gave it loads cleanly. Run it before pointing
+the agent at a real engagement — none of the core safety mechanics (scope
+lock, approval gate, redaction, audit logging) need any of this, but the
+LLM-assisted commands and DAST tool execution do.
+
 ## Quickstart
 
 ```bash

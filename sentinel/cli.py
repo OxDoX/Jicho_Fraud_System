@@ -13,6 +13,7 @@ from typing import List
 import typer
 
 from . import approval
+from .doctor import format_report, run_diagnostics
 from .engagement import Engagement, create_engagement, load_engagement
 from .llm.client import LLMUnavailable, SentinelLLM
 from .models import ProposalSource
@@ -51,6 +52,23 @@ def _load(engagement_id: str) -> Engagement:
 
 def _require_llm(model: str) -> SentinelLLM:
     return SentinelLLM(model=model)
+
+
+# --------------------------------------------------------------------------
+# Readiness check — run this first, before any engagement exists
+# --------------------------------------------------------------------------
+
+
+@app.command()
+def doctor(
+    scope: Path = typer.Option(None, "--scope", help="Optional scope doc to validate as part of the check."),
+):
+    """Concrete readiness check, not an assertion: is ANTHROPIC_API_KEY set
+    and the anthropic package installed, which of the approved tools are
+    actually on PATH, and (with --scope) does a given scope doc load
+    cleanly. Run this before pointing the agent at a real engagement."""
+    report = run_diagnostics(scope)
+    typer.echo(format_report(report))
 
 
 # --------------------------------------------------------------------------
