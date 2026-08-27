@@ -32,3 +32,16 @@ class RuleExecutionError(JichoError):
         self.rule_id = rule_id
         self.original_exception = original_exception
         super().__init__(f"Rule {rule_id} failed: {original_exception}")
+
+
+class UpdatePackageError(JichoError):
+    """Raised when a cloud-distributed update package fails checksum or
+    signature verification, or when jicho.update_agent is asked to do
+    something the package type doesn't support (e.g. auto-promoting a
+    new_rule package, which requires the manual code-review step instead).
+
+    Per the deployment architecture document, a verification failure is a
+    security event, not a transient/retryable error — the caller logs it
+    and discards the package rather than treating this as a normal
+    exception to retry past.
+    """

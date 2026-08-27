@@ -64,6 +64,7 @@ jicho/                          → installable package
   prevention.py                  → real-time block/hold/allow decisions, off by default, opt-in per rule
   anomaly.py                     → unsupervised anomaly layer: flags statistical outliers no named rule covers
   ai_proxy.py                    → backend proxy holding the Anthropic API key for dashboard.html's AI agents
+  update_agent.py                → cloud update channel: pull, verify, stage, human-gated promote, rollback
   rules/
     base.py                     → Rule ABC + plugin registry
     known_patterns.py           → all 18 detection rules
@@ -212,7 +213,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 94 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 116 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),
@@ -223,14 +224,18 @@ code itself would survive a real due-diligence review. Concretely:
   primitive (including a proof that raw account IDs never appear in an
   exported fingerprint), the unsupervised anomaly layer (including a
   regression test proving it never re-flags an account a named rule already
-  explained), and the AI-agent backend proxy (request forwarding, the
+  explained), the AI-agent backend proxy (request forwarding, the
   max-tokens safety cap, and a proof the API key never appears in a
-  response body). Run with `pytest tests/ -v`.
+  response body), and the update agent (signature/checksum verification,
+  every fail-safe path, rollback history capping, and the regression-test
+  before/after diff). Run with `pytest tests/ -v`.
 
 **New dependencies for the additions above**
 - `flask` and `requests` — the real-time HTTP API and its webhook dispatch.
   Both are used only by `realtime_api.py`; the core batch pipeline has no
   new runtime dependencies.
+- `cryptography` — Ed25519 signature verification for `jicho/update_agent.py`.
+  Used only there.
 
 **Code quality**
 - Linted clean with `ruff` (import order, unused imports, line length) —

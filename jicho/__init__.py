@@ -6,7 +6,7 @@ from jicho.engine import FraudEngine
 from jicho.exceptions import ConfigValidationError, JichoError, RuleExecutionError, TransactionSchemaError
 from jicho.models import Alert, validate_transactions
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "FraudEngine", "EngineConfig", "load_config", "Alert", "validate_transactions",

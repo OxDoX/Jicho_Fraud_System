@@ -136,16 +136,21 @@ and re-deriving from scratch risks reintroducing them:
   key server-side, forwards `dashboard.html`'s AI-agent request shape
   unmodified, enforces a max-tokens cap. Not itself an auth layer — must
   stay inside the institution's own network perimeter.
-- `tests/` — 94 tests, pytest, covering positive/negative cases per rule,
+- `jicho/update_agent.py` — the on-prem Update Agent from Section 10:
+  pull, verify (Ed25519 signature + SHA-256 checksum), stage, human-gated
+  promote, local rollback. See Section 10 for the full behavior.
+- `tests/` — 116 tests, pytest, covering positive/negative cases per rule,
   config/schema validation, engine fault isolation, hunting, the
   hunt-suggestion bridge, calibration (including the regression test
   above), real-time scoring (including a rule-classification regression
   test), federated layering (including a proof that raw account IDs
   never appear in an exported fingerprint), the unsupervised anomaly
   layer (including a regression test that it never re-flags an account
-  a named rule already explained), and the AI-agent backend proxy
+  a named rule already explained), the AI-agent backend proxy
   (request forwarding, the max-tokens cap, and a proof the API key never
-  appears in a response body).
+  appears in a response body), and the update agent (signature/checksum
+  verification, every fail-safe path leaving config untouched, rollback
+  history capping, and the regression-test before/after diff).
 
 Run `pytest tests/ -v` and `ruff check jicho/ tests/` before and after any
 change. Both must stay clean. This is not optional scaffolding — it's how
@@ -297,6 +302,23 @@ Summary for build purposes:
 - System must operate correctly, indefinitely, with zero cloud
   connectivity, using the last-approved ruleset. A failed update check
   must never degrade or pause detection/alerting.
+- Built: `jicho/update_agent.py` implements this exactly — Ed25519
+  signature + SHA-256 checksum verification (`verify_package()`), staging
+  that never auto-promotes, a `run_regression_test()` step that runs the
+  institution's own historical sample against current vs. staged config
+  before a human decides, a human-gated `promote()` requiring a named
+  reviewer, local `rollback()` retaining the last 3 approved versions, and
+  a `fail-safe` `pull_and_stage()` that never raises — a network failure
+  or a spoofed/tampered package is logged and leaves the engine's config
+  completely untouched, never blocking or degrading detection. Only
+  `config_update` packages are auto-promotable; a `new_rule` package still
+  needs the manual code-review step in Section 5.3 above, deliberately —
+  auto-applying a code change would violate the same principle this module
+  exists to uphold. `fetch_from_url()` (concrete HTTPS transport) and
+  `fetch_from_file()` (air-gapped manual import via removable media, per
+  the deployment doc's Section 5.4) are both provided, kept separate from
+  the verification/staging logic — the same transport-agnostic split
+  `jicho/realtime.py` already uses.
 
 ## 11. Build order if starting from zero
 
