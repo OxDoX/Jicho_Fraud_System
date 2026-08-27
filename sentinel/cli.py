@@ -5,6 +5,7 @@ in sentinel.approval, which prompts interactively on stdin. There is no
 "--yes" / "--force" flag anywhere in this file, on purpose: batching or
 skipping approval defeats the entire point of the tool (Hard Constraint 1).
 """
+import json
 import uuid
 from pathlib import Path
 from typing import List
@@ -281,6 +282,112 @@ def checklist():
         typer.echo(f"- {item}")
 
 
+@app.command()
+def suggest(
+    engagement_id: str = typer.Option(..., "--id"),
+    model: str = typer.Option("claude-sonnet-4-5", "--model"),
+):
+    """Have the LLM draft candidate Phase 3 proposals from the scope,
+    threat-intel brief (Phase 1.5), and hypotheses on file (Phase 1.75).
+    This only drafts and saves to suggested_proposals.json — nothing is
+    approved or executed. Review the output, then run one through the
+    normal approval gate with `propose-suggested --index N`."""
+    eng = _load(engagement_id)
+    phase1_scope.require_confirmed(eng)
+    _print_phase_banner(eng)
+    llm = _require_llm(model)
+    try:
+        suggestions = phase3_dast.suggest_proposals(eng, llm)
+    except LLMUnavailable as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
+
+    for i, s in enumerate(suggestions):
+        if "_unparsed" in s:
+            typer.echo(f"[{i}] (LLM output didn't parse as JSON — see suggested_proposals.json)")
+            continue
+        typer.echo(f"[{i}] {s.get('tool')} {s.get('args')} -> {s.get('target')}  (source={s.get('source')})")
+        typer.echo(f"     expected  : {s.get('expected_outcome')}")
+        typer.echo(f"     rationale : {s.get('rationale')}")
+    typer.echo(
+        f"\n{len(suggestions)} suggestion(s) saved to {eng.root / 'suggested_proposals.json'}.\n"
+        f"Run one: sentinel propose-suggested --id {engagement_id} --index N"
+    )
+
+
+@app.command("list-suggestions")
+def list_suggestions(engagement_id: str = typer.Option(..., "--id")):
+    eng = _load(engagement_id)
+    path = eng.root / "suggested_proposals.json"
+    if not path.exists():
+        typer.echo("No suggestions on file. Run `sentinel suggest` first.")
+        return
+    for i, s in enumerate(json.loads(path.read_text(encoding="utf-8"))):
+        typer.echo(f"[{i}] {s}")
+
+
+@app.command("propose-suggested")
+def propose_suggested(
+    engagement_id: str = typer.Option(..., "--id"),
+    index: int = typer.Option(..., "--index"),
+    escalation_requested: bool = typer.Option(False, "--escalation-requested"),
+):
+    """Take suggestion #index from `sentinel suggest`'s output and run it
+    through the exact same propose -> approve -> execute cycle as `propose`
+    — a suggestion is a draft, not a pre-approved action."""
+    eng = _load(engagement_id)
+    phase1_scope.require_confirmed(eng)
+    _print_phase_banner(eng)
+
+    path = eng.root / "suggested_proposals.json"
+    if not path.exists():
+        typer.echo("No suggestions on file. Run `sentinel suggest` first.", err=True)
+        raise typer.Exit(1)
+    suggestions = json.loads(path.read_text(encoding="utf-8"))
+    if index < 0 or index >= len(suggestions):
+        typer.echo(f"--index must be between 0 and {len(suggestions) - 1}", err=True)
+        raise typer.Exit(1)
+
+    s = suggestions[index]
+    if "_unparsed" in s or "tool" not in s or "target" not in s:
+        typer.echo(
+            "This suggestion isn't usable structured data — inspect "
+            "suggested_proposals.json and use `sentinel propose` manually.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        src = ProposalSource(s.get("source", "baseline"))
+    except ValueError:
+        typer.echo(f"Suggestion has an invalid source '{s.get('source')}' — defaulting to baseline.")
+        src = ProposalSource.BASELINE
+
+    try:
+        phase3_dast.propose_and_run(
+            eng,
+            tool=s["tool"],
+            args=s.get("args", ""),
+            target=s["target"],
+            expected_outcome=s.get("expected_outcome", ""),
+            rationale=s.get("rationale", ""),
+            source=src,
+            escalation_requested=escalation_requested,
+        )
+    except (
+        approval.EmergencyStopped,
+        approval.ScopeBlocked,
+        approval.DestructiveActionBlocked,
+        approval.EngagementTypeBlocked,
+        approval.EscalationNotRequested,
+    ) as e:
+        typer.echo(f"BLOCKED: {e}", err=True)
+        raise typer.Exit(1)
+    except KeyError as e:
+        typer.echo(f"Suggested tool is not on the approved list: {e}", err=True)
+        raise typer.Exit(1)
+
+
 # --------------------------------------------------------------------------
 # Findings / Phase 4 / Phase 4.5
 # --------------------------------------------------------------------------
@@ -305,6 +412,40 @@ def confirm(
         raise typer.Exit(1)
     ok = phase4_verification.confirm_finding(eng, finding)
     typer.echo("Confirmed." if ok else "Not confirmed.")
+
+
+@app.command()
+def correlate(engagement_id: str = typer.Option(..., "--id")):
+    """Suggest groups of findings that might share one root cause (same
+    asset, overlapping title language) — a suggestion only; nothing merges
+    until you run `merge-findings`."""
+    eng = _load(engagement_id)
+    groups = phase4_verification.correlate_findings(eng)
+    if not groups:
+        typer.echo("No likely-duplicate groups found.")
+        return
+    for i, group in enumerate(groups, start=1):
+        typer.echo(f"\nGroup {i} (asset={group[0].asset}):")
+        for f in group:
+            typer.echo(f"  - {f.id}  [{f.status}]  {f.title}")
+        typer.echo(f"  -> if these are the same root cause: sentinel merge-findings --id {engagement_id} "
+                    f"--keep {group[0].id} --absorb {','.join(f.id for f in group[1:])}")
+
+
+@app.command("merge-findings")
+def merge_findings_cmd(
+    engagement_id: str = typer.Option(..., "--id"),
+    keep: str = typer.Option(..., "--keep", help="Finding id to keep as the deduplicated root-cause finding."),
+    absorb: str = typer.Option(..., "--absorb", help="Comma-separated finding ids to merge into --keep and mark duplicate."),
+):
+    eng = _load(engagement_id)
+    absorb_ids = [a.strip() for a in absorb.split(",") if a.strip()]
+    try:
+        merged = phase4_verification.merge_findings(eng, keep, absorb_ids)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Merged {len(absorb_ids)} finding(s) into {merged.id} ({merged.title}).")
 
 
 @app.command()
@@ -339,12 +480,20 @@ def scan_leftover_state(engagement_id: str = typer.Option(..., "--id")):
 @app.command()
 def report(
     engagement_id: str = typer.Option(..., "--id"),
+    platform: str = typer.Option(
+        "generic", "--platform",
+        help=f"Match a platform's submission template. One of: {', '.join(phase5_reporting.PLATFORMS)}",
+    ),
     model: str = typer.Option("claude-sonnet-4-5", "--model"),
     no_llm: bool = typer.Option(False, "--no-llm"),
 ):
     eng = _load(engagement_id)
     llm = None if no_llm else _require_llm(model)
-    path = phase5_reporting.generate_report(eng, llm=llm)
+    try:
+        path = phase5_reporting.generate_report(eng, llm=llm, platform=platform)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
     typer.echo(f"Report written to {path}")
 
 

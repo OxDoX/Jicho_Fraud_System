@@ -2,11 +2,14 @@
 
 Important: the LLM is only ever used for tasks that do NOT touch a live
 target — threat-intel synthesis, novel hypothesis generation, SAST triage
-narration, and report/disclosure drafting. It never gets tool-execution
-capability itself; every target-touching action still goes through
+narration, report/disclosure drafting, and (dast_proposal_prompt) drafting
+candidate Phase 3 proposals. It never gets tool-execution capability
+itself; even a drafted proposal still goes through
 sentinel.approval.gate() and sentinel.tools.runner.run_tool() in plain
-Python, outside the LLM's control. This keeps the hard constraints
-enforced by code, not by the model choosing to follow instructions.
+Python, outside the LLM's control, exactly like a human-typed proposal —
+drafting a suggestion is not the same as approving or running it. This
+keeps the hard constraints enforced by code, not by the model choosing to
+follow instructions.
 """
 
 SENTINEL_SYSTEM_PROMPT = """\
@@ -118,4 +121,49 @@ needs to verify the fix, not what's needed to reproduce exploitation against \
 an unpatched instance. Exclude any real user/customer data; use synthetic \
 examples if an example is needed. Prefix the whole draft with:
 "DRAFT — NOT PUBLISHED. Requires logged human clearance before posting."
+"""
+
+
+def dast_proposal_prompt(
+    scope_summary: str,
+    threat_intel_brief: str,
+    hypotheses_text: str,
+    baseline_checklist_text: str,
+    approved_tool_names: str,
+) -> str:
+    return f"""\
+Scope:
+{scope_summary}
+
+Current threat-intel brief (Phase 1.5):
+{threat_intel_brief}
+
+Novel attack-chain hypotheses on file (Phase 1.75):
+{hypotheses_text}
+
+Baseline technique checklist:
+{baseline_checklist_text}
+
+Tools you may name — copy the name EXACTLY as spelled, nothing else is valid:
+{approved_tool_names}
+
+Draft 5-10 concrete Phase 3 DAST proposals ready for a human to review and \
+approve one at a time. Output ONLY a JSON array — no prose, no markdown code \
+fence — where every element has exactly these keys:
+  "tool": one of the approved tool names above, spelled exactly as given
+  "args": the exact CLI flags you'd pass. Never a destructive flag or \
+payload (no --dump, --os-shell, DROP TABLE, rm -rf, etc.) — propose the \
+least-destructive confirmation instead (e.g. a timing/OOB canary)
+  "target": a concrete host or URL consistent with the in-scope entries \
+above — never output the raw wildcard pattern itself (e.g. never literally \
+"*.example.com" — pick a concrete, plausible hostname under it instead)
+  "expected_outcome": what a positive result would actually look like
+  "rationale": why this is worth testing now — name the specific checklist \
+item / threat-intel item / hypothesis it comes from
+  "source": exactly one of "baseline", "threat_intel", "novel_hypothesis"
+
+Propose only steps that confirm a vulnerability's existence — never \
+exploitation, data extraction, lateral movement, or persistence. If \
+nothing above supports a concrete, currently-relevant proposal, return \
+fewer items rather than padding with filler.
 """

@@ -5,8 +5,13 @@ what happens next.
 """
 from __future__ import annotations
 
+import json
+import re
+
 from .. import approval
 from ..engagement import Engagement
+from ..llm.client import SentinelLLM
+from ..llm.prompts import dast_proposal_prompt
 from ..models import ApprovalDecision, ExecutionResult, Proposal, ProposalSource
 from .phase1_25_dedup import check_exclusions
 
@@ -90,3 +95,51 @@ def propose_and_run(
     if result.interpretation:
         print(f"\n[INTERPRETATION]\n{result.interpretation}")
     return result
+
+
+def _parse_json_array(raw: str) -> list[dict]:
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n", "", text)
+        text = re.sub(r"\n```\s*$", "", text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return [{"_unparsed": raw}]
+    if not isinstance(data, list):
+        return [{"_unparsed": raw}]
+    return [item for item in data if isinstance(item, dict)]
+
+
+def suggest_proposals(engagement: Engagement, llm: SentinelLLM) -> list[dict]:
+    """Ask the LLM to draft candidate Phase 3 proposals from the scope,
+    threat-intel brief, and Phase 1.75 hypotheses on file. This only
+    drafts and saves suggestions to disk — nothing here touches a target,
+    requests approval, or executes anything. A suggestion becomes a real
+    proposal only when fed into propose_and_run (e.g. via the CLI's
+    `propose-suggested`), which runs it through the exact same approval
+    gate as anything else."""
+    from ..tools.registry import list_tools
+    from .phase1_scope import summarize as summarize_scope
+
+    threat_intel_path = engagement.root / "threat_intel_brief.md"
+    threat_intel = threat_intel_path.read_text(encoding="utf-8") if threat_intel_path.exists() else "(no Phase 1.5 brief on file)"
+
+    hyps_path = engagement.root / "hypotheses_raw.md"
+    hyps_text = hyps_path.read_text(encoding="utf-8") if hyps_path.exists() else "(no Phase 1.75 hypotheses on file)"
+
+    approved_names = ", ".join(sorted(t.name for t in list_tools()))
+    checklist_text = "\n".join(f"- {item}" for item in BASELINE_CHECKLIST)
+
+    raw = llm.ask(
+        dast_proposal_prompt(summarize_scope(engagement), threat_intel, hyps_text, checklist_text, approved_names),
+        max_tokens=3000,
+    )
+    suggestions = _parse_json_array(raw)
+
+    out_path = engagement.root / "suggested_proposals.json"
+    out_path.write_text(json.dumps(suggestions, indent=2, ensure_ascii=False), encoding="utf-8")
+    engagement.logger.log_action(
+        "proposals_suggested", {"count": len(suggestions), "path": str(out_path)}
+    )
+    return suggestions

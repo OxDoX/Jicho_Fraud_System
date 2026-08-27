@@ -57,6 +57,7 @@ for spec in [
     ToolSpec("waybackurls", "recon", "waybackurls", "Historical URLs", "go install github.com/tomnomnom/waybackurls@latest"),
     ToolSpec("gau", "recon", "gau", "Historical URLs", "go install github.com/lc/gau/v2/cmd/gau@latest"),
     ToolSpec("whatweb", "recon", "whatweb", "Tech fingerprinting", "apt install whatweb"),
+    ToolSpec("wappalyzer", "recon", "wappalyzer", "Tech fingerprinting", "npm install -g wappalyzer"),
 
     # --- DAST ---
     ToolSpec("nuclei", "dast", "nuclei", "Template-based vulnerability scanning", "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"),

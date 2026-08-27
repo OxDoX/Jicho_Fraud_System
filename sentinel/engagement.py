@@ -13,10 +13,12 @@ from typing import Any
 
 from .logging_utils import EngagementLogger
 from .models import (
+    DisclosureGateAnswers,
     DisclosureRecord,
     EngagementType,
     Finding,
     Hypothesis,
+    ProposalSource,
     ScopeDoc,
     now_iso,
 )
@@ -35,6 +37,22 @@ def _to_jsonable(obj: Any) -> Any:
     if hasattr(obj, "value") and not isinstance(obj, (str, int, float, bool)):
         return obj.value
     return obj
+
+
+def _finding_from_dict(d: dict) -> Finding:
+    d = dict(d)
+    d["source"] = ProposalSource(d["source"])
+    return Finding(**d)
+
+
+def _hypothesis_from_dict(d: dict) -> Hypothesis:
+    return Hypothesis(**d)
+
+
+def _disclosure_from_dict(d: dict) -> DisclosureRecord:
+    d = dict(d)
+    d["answers"] = DisclosureGateAnswers(**d["answers"])
+    return DisclosureRecord(**d)
 
 
 class Engagement:
@@ -64,11 +82,13 @@ class Engagement:
         self.phase1_confirmed = data.get("phase1_confirmed", False)
         self.stopped = data.get("stopped", False)
         self.stop_reason = data.get("stop_reason", "")
-        # findings/hypotheses/disclosures are kept as raw dicts on disk;
-        # phases that need typed objects re-hydrate lazily where needed.
-        self._raw_findings = data.get("findings", [])
-        self._raw_hypotheses = data.get("hypotheses", [])
-        self._raw_disclosures = data.get("disclosures", [])
+        # Rehydrate into real dataclasses — every `sentinel` CLI command is a
+        # fresh process, so if this stayed as raw dicts, self.findings/
+        # hypotheses/disclosures would silently be empty on every command
+        # except the one that just created them in the same process.
+        self.findings = [_finding_from_dict(f) for f in data.get("findings", [])]
+        self.hypotheses = [_hypothesis_from_dict(h) for h in data.get("hypotheses", [])]
+        self.disclosures = [_disclosure_from_dict(d) for d in data.get("disclosures", [])]
 
     def save(self) -> None:
         data = {
@@ -80,9 +100,9 @@ class Engagement:
             "stopped": self.stopped,
             "stop_reason": self.stop_reason,
             "updated_at": now_iso(),
-            "findings": [_to_jsonable(f) for f in self.findings] or getattr(self, "_raw_findings", []),
-            "hypotheses": [_to_jsonable(h) for h in self.hypotheses] or getattr(self, "_raw_hypotheses", []),
-            "disclosures": [_to_jsonable(d) for d in self.disclosures] or getattr(self, "_raw_disclosures", []),
+            "findings": [_to_jsonable(f) for f in self.findings],
+            "hypotheses": [_to_jsonable(h) for h in self.hypotheses],
+            "disclosures": [_to_jsonable(d) for d in self.disclosures],
         }
         self.state_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 

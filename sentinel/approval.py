@@ -196,6 +196,18 @@ def gate(
     print(f"  phase      : {proposal.phase}")
     if escalation_requested:
         print("  ⚠ marked as an explicitly human-requested escalation step")
+
+    # Hard Constraint 9: flag, don't silently fix — auto-rewriting the args
+    # a human is about to approve would violate "execute exactly what was
+    # proposed, no silent modification." So this only warns; if it needs to
+    # be in there, put it in --args yourself before approving.
+    if scope.identity_requirement and scope.identity_requirement.strip() not in proposal.args:
+        print(
+            f"  ⚠ scope requires identity/attribution: '{scope.identity_requirement}' — "
+            f"this does not appear verbatim in --args. Confirm it's actually being sent "
+            f"(e.g. via a config/env default) or add it before approving."
+        )
+
     answer = confirm_fn("Approve this exact action? [y/N]: ").strip().lower()
 
     decision = ApprovalDecision.APPROVED if answer == "y" else ApprovalDecision.DENIED

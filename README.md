@@ -2,8 +2,8 @@
 
 Sentinel is an approval-gated AI agent for **authorized** bug bounty hunting
 and penetration testing. It implements the Sentinel workflow (scope intake →
-threat intel → novel hypothesis generation → SAST → SAST → DAST → verification
-→ cleanup → reporting → disclosure → retest) as real, enforced Python code —
+threat intel → novel hypothesis generation → SAST → DAST → verification →
+cleanup → reporting → disclosure → retest) as real, enforced Python code —
 not just an LLM prompt asking nicely.
 
 **The safety model is code, not instructions.** Scope lock, per-action human
@@ -24,6 +24,15 @@ that exact proposal.
 
 ## Why this architecture
 
+- **The agent proposes, it doesn't just execute what you type**
+  (`sentinel suggest` / `sentinel/phases/phase3_dast.py::suggest_proposals`)
+  — the LLM drafts concrete tool+args+target Phase 3 proposals from the
+  scope, the Phase 1.5 threat-intel brief, and Phase 1.75 hypotheses,
+  saved to `suggested_proposals.json`. Drafting is not approval or
+  execution: a suggestion only becomes a real action via
+  `propose-suggested`, which runs it through the exact same approval gate
+  as a hand-typed `propose` call — same scope lock, same destructive/
+  escalation checks, same fresh human "yes" required.
 - **Approval gate, every time** (`sentinel/approval.py::gate`) — no tool call
   reaches a live target without a fresh, single-use, interactive confirmation.
   There is no "approve all" flag anywhere in the CLI, on purpose.
@@ -67,6 +76,14 @@ that exact proposal.
   sending it to the LLM API for triage synthesis requires an explicit flag
   each run (Hard Constraint 10). Without it you still get findings, just
   with raw (redacted) tool output as the evidence instead of an LLM summary.
+- **Finding correlation is a suggestion, merging is explicit**
+  (`sentinel correlate` / `sentinel merge-findings`) — findings sharing an
+  asset and overlapping title language get grouped as a suggestion; nothing
+  is combined into one root-cause finding until you name exactly which ids
+  to merge, matching "never combine unrelated findings into one entry."
+- **Report templates match the platform** (`sentinel report --platform
+  hackerone|bugcrowd|intigriti|jira|generic`) — field layout follows each
+  platform's own submission format.
 
 ## Install
 
@@ -137,16 +154,26 @@ sentinel sast --id my-program --run "semgrep=--config auto ./path/to/repo"
 #    which should only ever be true because the human explicitly asked for
 #    that specific next step.
 sentinel checklist   # see the baseline technique list
+
+# Either propose by hand:
 sentinel propose --id my-program \
   --tool nuclei --args "-t cves/2025/ -rate-limit 5" \
   --target "https://app.example.com" \
   --expected "identify known CVEs" \
   --rationale "baseline recon" --source baseline
 
-# 8. Review findings, confirm one, generate the report
+# ...or have the agent draft candidates from scope + threat-intel + hypotheses,
+# review them, then run one through the same approval gate:
+sentinel suggest --id my-program
+sentinel list-suggestions --id my-program
+sentinel propose-suggested --id my-program --index 0
+
+# 8. Review findings, correlate likely duplicates, confirm, generate the report
 sentinel findings --id my-program
+sentinel correlate --id my-program
+sentinel merge-findings --id my-program --keep <id> --absorb <id2>,<id3>
 sentinel confirm --id my-program --finding-id <id>
-sentinel report --id my-program
+sentinel report --id my-program --platform hackerone
 
 # 9. Cleanup anything testing created
 sentinel scan-leftover-state --id my-program
@@ -193,8 +220,13 @@ pytest
 
 Tests cover the safety-critical paths specifically: scope matching
 (wildcards, CIDRs, out-of-scope precedence), the approval gate (scope block,
-destructive block, pentest-only block, denial handling, logging), and
-redaction (JWTs, AWS keys, emails, label-preserving value masking).
+destructive block, escalation block, pentest-only block, denial handling,
+logging), emergency stop/resume state transitions, the dedup/exclusion
+prompt, redaction (JWTs, AWS keys, emails, label-preserving value masking),
+finding correlation/merge, LLM proposal-suggestion parsing, and — critically
+— that findings/hypotheses/disclosures actually survive a save/reload cycle
+as typed objects (every `sentinel` command is a fresh process, so this one
+matters more than it sounds).
 
 ## Project layout
 
