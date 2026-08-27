@@ -139,7 +139,7 @@ and re-deriving from scratch risks reintroducing them:
 - `jicho/update_agent.py` — the on-prem Update Agent from Section 10:
   pull, verify (Ed25519 signature + SHA-256 checksum), stage, human-gated
   promote, local rollback. See Section 10 for the full behavior.
-- `tests/` — 116 tests, pytest, covering positive/negative cases per rule,
+- `tests/` — 120 tests, pytest, covering positive/negative cases per rule,
   config/schema validation, engine fault isolation, hunting, the
   hunt-suggestion bridge, calibration (including the regression test
   above), real-time scoring (including a rule-classification regression

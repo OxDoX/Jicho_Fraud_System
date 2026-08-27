@@ -62,6 +62,18 @@ def test_verify_package_rejects_tampered_payload(vendor_key):
         verify_package(package, _pem(vendor_key))
 
 
+def test_verify_package_rejects_malformed_public_key_with_a_typed_error(vendor_key):
+    """A misconfigured public_key_pem (not this package's problem) must
+    still surface as our own typed UpdatePackageError, not a raw
+    cryptography-library ValueError — otherwise a deployment misconfig
+    looks like an unhandled crash instead of a clear, actionable message.
+    """
+    payload = json.dumps({"velocity_txn_count": 5}).encode()
+    package = _make_package(vendor_key, payload)
+    with pytest.raises(UpdatePackageError, match="not a valid PEM-encoded key"):
+        verify_package(package, public_key_pem=b"not a real PEM key")
+
+
 def test_verify_package_rejects_signature_from_wrong_key(vendor_key):
     attacker_key = Ed25519PrivateKey.generate()
     payload = json.dumps({"velocity_txn_count": 5}).encode()
@@ -164,6 +176,26 @@ def test_rollback_history_retains_only_last_three_versions(agent, vendor_key, tm
 
     history_dir = tmp_path / "state" / "rollback_history"
     assert len(list(history_dir.iterdir())) == 3
+
+
+def test_promote_rejects_invalid_config_override_without_writing_or_backing_up(agent, vendor_key, tmp_path):
+    """A typo'd/renamed config key must fail AT promotion time, pointing at
+    the actual bad key — not silently write a config the engine will only
+    reject the next time it starts. Also must not touch config_path or
+    push a rollback backup for a promotion that never actually happened.
+    """
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("velocity_txn_count: 4\n")
+
+    bad_payload = json.dumps({"velocity_txn_cout": 6}).encode()  # typo'd key
+    staged = agent.pull_and_stage(lambda: _make_package(vendor_key, bad_payload))
+
+    with pytest.raises(UpdatePackageError, match="would be invalid"):
+        agent.promote(staged, str(config_path), reviewer="jane", decision_note="typo, should fail")
+
+    assert config_path.read_text() == "velocity_txn_count: 4\n"  # untouched
+    history_dir = tmp_path / "state" / "rollback_history"
+    assert not history_dir.exists() or list(history_dir.iterdir()) == []
 
 
 def test_promote_rejects_non_config_update_package_type(agent, vendor_key, tmp_path):

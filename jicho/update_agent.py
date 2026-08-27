@@ -131,6 +131,13 @@ def verify_package(package: UpdatePackage, public_key_pem: bytes) -> None:
     the module docstring for why both are checked and why either failing
     is handled identically.
     """
+    # Checksum first: it's a cheap comparison, so a corrupted-in-transit
+    # package is rejected before spending any time on signature math. If
+    # you're troubleshooting a rejection, the audit log line (and the
+    # exception message here) tells you which of the two actually failed —
+    # "Checksum mismatch" means the bytes changed, "Signature verification
+    # failed" means the bytes are intact but weren't signed by the
+    # configured key.
     actual_checksum = compute_checksum(package.payload)
     if actual_checksum != package.checksum_sha256:
         raise UpdatePackageError(
@@ -138,9 +145,20 @@ def verify_package(package: UpdatePackage, public_key_pem: bytes) -> None:
             f"expected {package.checksum_sha256}, computed {actual_checksum}"
         )
 
-    public_key = load_pem_public_key(public_key_pem)
+    # A malformed/misconfigured public_key_pem must not surface as a raw
+    # cryptography-library ValueError — that's a confusing thing to hit in
+    # production logs and doesn't point at the actual problem (bad
+    # deployment config, not a bad update package).
+    try:
+        public_key = load_pem_public_key(public_key_pem)
+    except ValueError as e:
+        raise UpdatePackageError(
+            "Configured public_key_pem is not a valid PEM-encoded key — check the Update Agent's "
+            "own configuration, not the incoming package"
+        ) from e
     if not isinstance(public_key, Ed25519PublicKey):
         raise UpdatePackageError("Configured public key is not an Ed25519 key")
+
     try:
         public_key.verify(package.signature, package.payload)
     except InvalidSignature as e:
@@ -257,16 +275,30 @@ class UpdateAgent:
         if not reviewer:
             raise ValueError("promote() requires a named reviewer — this is a human-accountable action")
 
-        self._push_rollback_history(config_path)
-
         overrides = json.loads(staged.package.payload)
         current: dict = {}
         if os.path.exists(config_path):
             with open(config_path) as f:
                 current = yaml.safe_load(f) or {}
-        current.update(overrides)
+        merged = {**current, **overrides}
+
+        # Validate BEFORE writing anything to disk. Without this, a typo'd
+        # or renamed config key would write successfully here and only
+        # blow up the next time the engine starts and load_config() rejects
+        # it (EngineConfig has extra="forbid") — a confusing failure far
+        # from its actual cause. Catching it here means the error points
+        # straight at the bad key, at the moment the reviewer approved it.
+        try:
+            EngineConfig(**merged)
+        except Exception as e:
+            raise UpdatePackageError(
+                f"Refusing to promote package {staged.package.version}: the resulting config would be "
+                f"invalid ({e}). config_path was NOT modified."
+            ) from e
+
+        self._push_rollback_history(config_path)
         with open(config_path, "w") as f:
-            yaml.safe_dump(current, f)
+            yaml.safe_dump(merged, f)
 
         self._audit_log(
             "promoted",

@@ -213,7 +213,7 @@ code itself would survive a real due-diligence review. Concretely:
   ever reaches a rule.
 
 **Testing**
-- 116 unit tests (`tests/`) covering every rule's positive case (fires on the
+- 120 unit tests (`tests/`) covering every rule's positive case (fires on the
   planted pattern) and negative case (silent on normal activity), config
   validation, schema validation, engine-level fault isolation, the hunting
   module (network traversal, similarity ranking, shared-attribute detection),

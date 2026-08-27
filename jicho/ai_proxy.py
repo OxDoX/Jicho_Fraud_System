@@ -74,13 +74,24 @@ def proxy_claude():
     server-held API key. Body shape matches what dashboard.html's
     callClaude() already sends: {system, messages, max_tokens, model}.
     """
+    # force=True: dashboard.html's fetch() always sends JSON, but don't
+    # trust Content-Type over the actual body; silent=True turns "not
+    # valid JSON at all" into None instead of an unhandled exception, so
+    # the check below can give a clean 400 instead of a raw traceback.
     body = request.get_json(force=True, silent=True)
     if not body or "messages" not in body:
         return jsonify({"error": "request body must include a 'messages' array"}), 400
 
+    try:
+        max_tokens = min(int(body.get("max_tokens", 1000)), MAX_TOKENS_CAP)
+    except (TypeError, ValueError):
+        # A non-numeric max_tokens from a misbehaving client is a bad
+        # request, not a server error — don't let int() crash into a 500.
+        return jsonify({"error": "max_tokens must be an integer"}), 400
+
     payload = {
         "model": body.get("model", DEFAULT_MODEL),
-        "max_tokens": min(int(body.get("max_tokens", 1000)), MAX_TOKENS_CAP),
+        "max_tokens": max_tokens,
         "messages": body["messages"],
     }
     if "system" in body:
@@ -107,7 +118,17 @@ def proxy_claude():
         logger.error(f"Upstream request to Anthropic failed: {e}")
         return jsonify({"error": "Could not reach the Anthropic API"}), 502
 
-    return jsonify(upstream.json()), upstream.status_code
+    try:
+        upstream_body = upstream.json()
+    except ValueError:
+        # Anthropic is down or a network intermediary (proxy, CDN, WAF)
+        # returned an HTML/plain-text error page instead of JSON — pass
+        # the real upstream status code through so the dashboard's error
+        # message is accurate, but don't try to jsonify() non-JSON text.
+        logger.error(f"Upstream returned non-JSON body (status {upstream.status_code}): {upstream.text[:200]!r}")
+        return jsonify({"error": f"Anthropic API returned a non-JSON response (status {upstream.status_code})"}), 502
+
+    return jsonify(upstream_body), upstream.status_code
 
 
 @app.route("/health", methods=["GET"])

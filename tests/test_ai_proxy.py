@@ -18,6 +18,20 @@ class _FakeUpstreamResponse:
         return self._json_body
 
 
+class _FakeNonJsonUpstreamResponse:
+    """Simulates a WAF/CDN/outage returning an HTML or plain-text body
+    instead of Anthropic's normal JSON — .json() raises, matching what
+    requests.Response.json() does on invalid JSON.
+    """
+
+    def __init__(self, text, status_code=502):
+        self.text = text
+        self.status_code = status_code
+
+    def json(self):
+        raise ValueError("not valid JSON")
+
+
 def test_proxy_forwards_request_and_injects_api_key(client, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-secret")
     captured = {}
@@ -79,6 +93,25 @@ def test_proxy_caps_client_supplied_max_tokens(client, monkeypatch):
 
     client.post("/api/claude", json={"messages": [{"role": "user", "content": "hi"}], "max_tokens": 999_999})
     assert captured["json"]["max_tokens"] == MAX_TOKENS_CAP
+
+
+def test_proxy_returns_400_on_non_numeric_max_tokens_instead_of_crashing(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    resp = client.post("/api/claude", json={"messages": [{"role": "user", "content": "hi"}], "max_tokens": "lots"})
+    assert resp.status_code == 400
+
+
+def test_proxy_returns_502_on_non_json_upstream_body_instead_of_crashing(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+    def fake_post(url, json, headers, timeout):
+        return _FakeNonJsonUpstreamResponse("<html>502 Bad Gateway</html>", status_code=502)
+
+    monkeypatch.setattr("jicho.ai_proxy.requests.post", fake_post)
+
+    resp = client.post("/api/claude", json={"messages": [{"role": "user", "content": "hi"}]})
+    assert resp.status_code == 502
+    assert "non-JSON" in resp.get_json()["error"]
 
 
 def test_proxy_returns_502_on_upstream_network_failure(client, monkeypatch):
